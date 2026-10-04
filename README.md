@@ -96,8 +96,10 @@ The answer leads with the conclusion, then gives the derivation as numbered impe
 > 3. Multiply by the layers. This gives $2\, L\, n_{kv} d_h$ numbers per token.
 > 4. Multiply by the tokens and by the sequences.
 > 5. Multiply by the bytes per number.
->
-> $$M_{\text{KV}} = 2 \cdot L \cdot n_{kv} d_h \cdot T \cdot B \cdot b$$
+
+```math
+M_{\text{KV}} = 2 \cdot L \cdot n_{kv} d_h \cdot T \cdot B \cdot b
+```
 
 It adds a worked Llama 2 7B example, a self-check on Llama 3 8B (grouped-query attention) with the answer folded away, and, because the content has parts and a flow, one diagram:
 
