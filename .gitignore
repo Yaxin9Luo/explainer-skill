@@ -1,0 +1,7 @@
+TASKS.md
+__pycache__/
+.DS_Store
+workspace/
+media/
+截屏*.png
+Screenshot*.png

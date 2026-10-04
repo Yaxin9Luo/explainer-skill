@@ -1,0 +1,38 @@
+{
+  "title": "PPO: the clipped surrogate objective",
+  "voice": "en-US-AndrewNeural",
+  "scenes": [
+    {
+      "id": "Intro",
+      "narration": "PPO collects a batch of experience with its current policy. Then it runs several epochs of gradient ascent on that same batch. Here is the problem. After a few steps, the policy is no longer the one that collected the data. How far can we move it before the old data stops telling the truth? PPO answers with one objective, the clipped surrogate. Let's read it piece by piece: the ratio, the clip, and the min."
+    },
+    {
+      "id": "Ratio",
+      "narration": "Start with the probability ratio. For each sampled state and action, r is the probability of that action under the new policy, divided by its probability under the old policy that collected the data. At the start of each update, the two policies are equal, so r is exactly one. Multiply r by the advantage estimate, and average over the batch. This is the conservative policy iteration surrogate. It is an importance-sampled estimate of how much the new policy improves on the old one. At r equal to one, its gradient is exactly the standard policy gradient. But the estimate is only reliable near r equal to one. And the objective is linear in r. With a positive advantage, it rewards pushing r up without limit. Nothing in it says stop."
+    },
+    {
+      "id": "Clip",
+      "narration": "So PPO clips the ratio. Clip of r keeps r inside the interval from one minus epsilon to one plus epsilon. A common choice is epsilon equal to zero point two, so the interval is zero point eight to one point two. Outside the interval, the clipped ratio is flat. A flat function has zero gradient. So once the ratio leaves the interval, the clipped term gives no incentive to push it further. But the clip alone is not the full story. PPO takes the minimum of the clipped term and the unclipped term."
+    },
+    {
+      "id": "PositiveAdv",
+      "narration": "Take a positive advantage. The action was better than expected, so we want to make it more likely. Here is the unclipped term, r times A, a line through the origin. Here is the clipped term. It follows the same line inside the interval, and it is flat outside. The objective is the minimum of the two. Above one plus epsilon, the clipped term is smaller, so the min picks it. The objective is flat, and this sample contributes zero gradient. The good action is already more than twenty percent more likely than before, so we stop pushing. Below one minus epsilon, the unclipped line is smaller, so the min keeps it. The slope is still positive. If an update made this good action less likely, the gradient still pulls it back up."
+    },
+    {
+      "id": "NegativeAdv",
+      "narration": "Now a negative advantage. The action was worse than expected, so we want to make it less likely. Both terms flip. The unclipped term, r times A, now slopes down. Below one minus epsilon, the clipped term is smaller, so the min picks the flat part. The gradient is zero. The bad action is already more than twenty percent less likely, so we stop pushing. Above one plus epsilon, the unclipped line is smaller, so the min keeps it. The objective keeps falling as r grows, without a bound. If an update made the bad action more likely, the full penalty applies, and the gradient pushes r back down."
+    },
+    {
+      "id": "Numbers",
+      "narration": "Let's check with numbers. Epsilon is zero point two, and the advantage is plus or minus two. Case one. Advantage plus two, ratio one point five. Unclipped gives three. Clipped gives one point two times two, which is two point four. The min is the clipped value, so the gradient is zero. Case two. Advantage plus two, ratio zero point six. Unclipped gives one point two, clipped gives one point six. The min is the unclipped value, so the gradient flows. Case three. Advantage minus two, ratio one point five. Unclipped gives minus three, clipped gives minus two point four. The min is unclipped, so the gradient flows and pushes the ratio down. Case four. Advantage minus two, ratio zero point six. Unclipped gives minus one point two, clipped gives minus one point six. The min is clipped, so the gradient is zero."
+    },
+    {
+      "id": "WhyMin",
+      "narration": "So what does the min do? It makes the objective a pessimistic lower bound on the unclipped surrogate. The clip takes effect only when the ratio has moved in the direction that improves the objective. When the ratio moves in the direction that makes the objective worse, the min keeps the unclipped term, so that change counts in full. Without the min, the clipped term alone would also be flat in those regions. The gradient would be zero exactly where the policy moved the wrong way, and nothing would correct it. One caution. Clipping is not a hard trust region. It removes the incentive to leave the interval, but the ratio can still end up outside it."
+    },
+    {
+      "id": "Recap",
+      "narration": "To recap. The ratio lets us reuse data from the old policy. The clip removes the incentive to move the ratio past one plus or minus epsilon. And the min makes sure the clip only ignores changes that would improve the objective, never changes that make it worse."
+    }
+  ]
+}
