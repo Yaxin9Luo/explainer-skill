@@ -1,6 +1,6 @@
 # explainer
 
-A [Claude Code](https://claude.com/claude-code) skill that picks the clearest way to explain something — and then actually builds it: controlled-English text, typeset diagrams, interactive pages, or a narrated 3Blue1Brown-style video.
+A [Claude Code](https://claude.com/claude-code) skill that picks the clearest way to explain something — and then actually builds it: controlled-English text, Mermaid or typeset SVG diagrams, comparison tables, interactive pages, or a narrated 3Blue1Brown-style video. English or Chinese.
 
 It grew out of [Andrej Karpathy's post](https://x.com/karpathy/status/2105819303471976479) on getting LLM output into forms that are easier to understand: ASD-STE100 writing → diagrams → HTML pages → bespoke explainer videos. This skill packages that ladder so the agent chooses the rung (or several) that fits the content, and checks its own visual output before handing it over.
 
@@ -13,13 +13,15 @@ It grew out of [Andrej Karpathy's post](https://x.com/karpathy/status/2105819303
 
 | Content looks like… | The skill adds |
 |---|---|
-| anything | a text answer (always the anchor) |
-| parts and relations, a data flow | a diagram (SVG, formulas typeset with LaTeX) |
-| a process, or something with a knob to turn | an interactive HTML page (KaTeX math, live sliders) |
-| something to follow or reproduce exactly | ASD-STE100-style text ("80% STE" by default) |
-| a concept worth a video, *and you ask for one* | a narrated Manim video with per-sentence audio/visual sync |
+| anything | a text answer (always the anchor), written for the audience it infers (expert / novice / non-native) |
+| parts and relations, a data flow | a diagram: a Mermaid block when it goes into Markdown (README, PR, Notion), an SVG with LaTeX-typeset formulas otherwise |
+| two or three things to compare | a comparison table (only the rows that differ) |
+| an ordered exchange, a state machine, a history | a sequence diagram, state diagram, or timeline |
+| a continuous process, or something with a knob to turn | an interactive HTML page (KaTeX math, live sliders) |
+| something to follow or reproduce exactly | ASD-STE100-style text ("80% STE" by default; concrete rules for Chinese too) |
+| a concept worth a video, *and you ask for one* | a narrated Manim video with per-sentence audio/visual sync and subtitles |
 
-It also follows the conversation: if you still don't get it, it moves up one form and targets the exact sticking point instead of repeating itself.
+Before pixels it checks content: every number recomputed, conventions named, sources cited, the usual mix-ups listed. It also follows the conversation: if you still don't get it, it first locates the sticking point (a term? missing background? the process?) and adds the one thing that fixes it, instead of repeating itself or rebuilding the artifact.
 
 ## Conversation mode
 
@@ -31,7 +33,7 @@ Most explaining happens mid-conversation, not as a deliverable. When you ask Cla
 
 The reply loads the skill's diagram guide, plots the objective for both signs of the advantage, and the text below points into the plot ("the orange dotted line on the left of the A > 0 plot"). An interactive page is offered in one line, not built.
 
-Skills load when the model thinks it needs them, and a plain "why…?" question often does not look like it needs one. To make conversation mode reliable, add one line to your `~/.claude/CLAUDE.md`:
+Skills load when the model thinks it needs them. The skill's description now names the conversational triggers directly (why/how questions, "explain", "I still don't get it", and their Chinese equivalents), which is the mechanism Claude Code documents for triggering; `evals/run_triggers.sh` measures it. If plain "why…?" questions still go unanswered by the skill in your setup, one line in `~/.claude/CLAUDE.md` is a workable fallback:
 
 ```
 - When I ask how or why something works, use the explainer skill to decide whether a diagram belongs in the answer.
@@ -118,53 +120,59 @@ mkdir -p ~/.claude/skills
 ln -s "$(pwd)/explainer-skill/explainer" ~/.claude/skills/explainer
 ```
 
-Text and interactive pages need nothing else. For **videos**, and for the `math` (typeset formulas in SVG diagrams) and `snapshot` (visual checks) helpers, run the one-time setup:
+Text, tables, Mermaid, and interactive pages need nothing else. For **videos**, and for the `math` (typeset formulas in SVG diagrams) and `snapshot` (visual checks) helpers, run the one-time setup:
 
 ```bash
 bash ~/.claude/skills/explainer/scripts/setup.sh
 ```
 
-It creates a venv at `~/.venvs/explainer` (Python 3.12 via `uv`, otherwise your `python3`; override with `EXPLAINER_VENV`) with [Manim](https://www.manim.community/) and [edge-tts](https://github.com/rany2/edge-tts), installs `ffmpeg` / `dvisvgm` / cairo via Homebrew on macOS (prints the apt line on Linux), and runs a dependency check. You also need a LaTeX distribution (MacTeX, BasicTeX, or `brew install texlive`).
+It installs the system libraries it can (Homebrew on macOS; `apt-get` on Debian/Ubuntu when it has root or passwordless sudo, otherwise it prints the exact command), creates a venv at `~/.venvs/explainer` (a Python 3.11–3.13 already on the machine via `uv`, otherwise your `python3`; override with `EXPLAINER_VENV`) with [Manim](https://www.manim.community/) and [edge-tts](https://github.com/rany2/edge-tts), and runs `explainer.py check`, which also reports Chrome, CJK fonts, offline TTS engines, and whether the online TTS host is reachable. On macOS you also need a LaTeX distribution (MacTeX, BasicTeX, or `brew install texlive`); on Linux the apt line includes `texlive texlive-latex-extra`.
 
 Then just ask Claude Code to explain something. Ask for a video explicitly; the skill never starts one unasked.
 
 ## How the video pipeline works
 
 ```
-script.json ──tts──▶ audio/*.mp3 + cues.json (sentence start times)
+script.json ──tts──▶ audio/*.mp3 + cues.json (sentence start times; only changed scenes re-synthesized)
      │                         │
      ▼                         ▼
-storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a beat on sentence i)
-                               │ render 480p draft
+storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a beat on sentence i, self.finish() holds)
+                               │ render 480p draft          ◀── stale: which scenes to re-render
                                ▼
-                   assemble (pad each scene so audio = video) ──▶ final.mp4
+                   assemble (pad each scene so audio = video; cached parts) ──▶ final.mp4
                                │
                                ▼
-     review: one frame per sentence + contact sheets + index.md
+     review: one frame per sentence (+ mid-sentence) + contact sheets + index.md
      → self-check + independent reviewer agent → fix → repeat → 1080p
+     → srt (subtitles from the cues) → assemble --subtitles → gif (README preview)
 ```
 
 `scripts/explainer.py` subcommands:
 
 | command | what it does |
 |---|---|
-| `check` | verify ffmpeg, LaTeX, dvisvgm, manim, edge-tts (Chrome and the ElevenLabs key are reported, not required) |
-| `tts` | narration → audio + per-sentence cues (edge-tts, macOS `say`, or ElevenLabs) |
-| `assemble` | mux each scene with its audio (freeze last frame / pad silence), concatenate |
-| `review` | one frame per sentence (optionally mid-sentence too), 3×2 contact sheets, frame↔sentence index |
+| `check` | verify ffmpeg, LaTeX, dvisvgm, manim, edge-tts, Chrome, CJK fonts, offline TTS, and whether the TTS host is reachable |
+| `tts` | narration → audio + per-sentence cues; engines: edge-tts (online), espeak-ng (offline), macOS `say`, ElevenLabs. Incremental: only changed scenes, with a diff of the cues. Chinese narration picks a zh-CN voice. Empty narration + `duration` = a silent scene |
+| `stale` | list scenes whose class source or cues changed since their video was last assembled/reviewed, with the `manim` command to re-render them |
+| `assemble` | mux each scene with its audio (freeze last frame / pad silence), concatenate; unchanged parts are reused; `--subtitles` adds a soft track, `--burn-subtitles` hard-codes it |
+| `srt` | sentence-level subtitles from the cues, offset by the real assembly timeline |
+| `review` | one frame per sentence (`--mid`: plus mid-sentence, laid out one sentence per row), contact sheets, frame↔sentence index; `--scenes` rebuilds only some |
 | `frames` | evenly spaced stills from any video |
-| `lint` | flag sentences over the STE length limit in a Markdown answer (Chinese/Japanese counted in characters) |
+| `gif` | palette-optimized GIF preview of a few seconds, for READMEs |
+| `lint` | flag sentences over the STE length limit in a Markdown answer (Chinese/Japanese counted in characters; "e.g." does not end a sentence) |
 | `math` | LaTeX → SVG sized in px, with `currentColor` and collision-free ids, ready to paste into a diagram |
-| `snapshot` | headless-Chrome screenshots of an SVG/HTML page, light + dark, exact phone width, `--query` for slider states |
+| `snapshot` | headless-Chrome screenshots of an SVG/HTML page, light + dark, exact phone width, `--query` for slider states, `--scale 2` / `--transparent` for exports; finds Playwright/snap Chromium or `CHROME_BIN` |
 | `voices` | list ElevenLabs voices |
 
 ## What I verified, and what I didn't
 
-- Tested on macOS (Apple Silicon) with Claude Code. The Linux setup is written but untested; Windows is not supported.
+- Tested on macOS (Apple Silicon) with Claude Code, and the full pipeline (setup, render, assemble, review, srt, gif) on Ubuntu 24.04 with manim 0.21 in a cloud container, where only the online TTS could not be exercised (the container's proxy blocks it; the offline `espeak` engine was used instead). Windows is not supported.
 - Text, diagram, and page requests were tested with subagents with and without the skill; the video pipeline was tested with the skill only (two videos). Trigger accuracy was measured with `claude -p` on 24 realistic prompts × 3 runs (majority vote), with the CLAUDE.md line above installed: 11 of the 12 should-trigger prompts fired and none of the 12 should-not did. The skill's biggest gains are in the visual forms: typeset math, consistent color encoding, and a screenshot/frame check that catches overlaps, raw `_` subscripts, broken dark mode, and wrong phone layouts before you see them. For plain text, an unaided model already writes good explanations; the skill mostly adds structure (conclusion first, reproducible steps).
 - The agent cannot watch a video. Video quality is controlled through per-sentence frames and an independent reviewer, which catches layout, math, and sync-order problems, but not, for example, awkward pacing within a sentence.
-- Accessibility: both example videos use red against green for their central contrast, which red-green color-blind viewers will partly lose. The skill now forbids that pairing; the examples have not been re-rendered. Videos have no captions yet.
-- edge-tts is free and sends the narration text to Microsoft's online TTS service. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps landed within 0.08 s of the real pauses at the three boundaries we checked (one scene). It sounds more natural but is not needed for clear explainers.
+- Accessibility: both example videos use red against green for their central contrast, which red-green color-blind viewers will partly lose. The skill now forbids that pairing; the examples have not been re-rendered. The pipeline now produces sentence-level subtitles (`explainer.py srt`); the example videos predate it and have none.
+- edge-tts is free and sends the narration text to Microsoft's online TTS service; the skill says so before running it when the narration looks non-public, and `--engine espeak` is the offline alternative. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps landed within 0.08 s of the real pauses at the three boundaries we checked (one scene). It sounds more natural but is not needed for clear explainers.
+- The two example video projects ship `script.json`, `scenes.py`, and (for flow matching) the storyboard, but not the generated `audio/` folder; to re-render them run `tts` first. The PPO scenes predate `timed.py`.
+- Trigger accuracy: `evals/triggers.jsonl` holds 26 prompts (English and Chinese, half should trigger); `evals/run_triggers.sh` measures it with `claude -p`.
 
 ## License
 

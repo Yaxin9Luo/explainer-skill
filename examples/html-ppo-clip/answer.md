@@ -17,7 +17,7 @@ The policy gradient goes through r: ∇_θ L = (∂L/∂r) · r · ∇_θ log π
 I built a page to play with this: `index.html`. Open it with
 
 ```
-open index.html
+open index.html        # macOS; Linux: xdg-open index.html
 ```
 
 It has sliders for ε, A, and r. It plots L(r) with both terms and shades the zero-gradient region, plots ∂L/∂r under it, and adds a map of the whole (r, A) plane. The "Try this" cards animate the key cases. You can also set a starting state in the URL, e.g. `index.html?A=-1&r=1.6` (the "wrong way" case).
