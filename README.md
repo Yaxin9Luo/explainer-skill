@@ -25,7 +25,17 @@ It also follows the conversation: if you still don't get it, it moves up one for
 
 Most explaining happens mid-conversation, not as a deliverable. When you ask Claude to explain something, or say you don't get it, and the host can render visuals inside the reply (e.g. the Claude desktop app), the answer itself becomes interleaved text and diagrams. It stays light: at most one or two inline visuals, no separate file, roughly a minute per answer in our test. During normal coding work it stays in text and doesn't interrupt.
 
-<!-- CONVERSATION -->
+> *"Why we need min function in PPO's objective?"* (asked in a normal Claude Code desktop session)
+
+<p align="center"><img src="examples/conversation-ppo-min/conversation.png" width="760" alt="Claude's reply in the desktop app: one paragraph, then an inline plot of the PPO objective for A=+1 and A=-1, then text that refers to the orange dotted line in the plot"></p>
+
+The reply loads the skill's diagram guide, plots the objective for both signs of the advantage, and the text below points into the plot ("the orange dotted line on the left of the A > 0 plot"). An interactive page is offered in one line, not built.
+
+Skills load when the model thinks it needs them, and a plain "why…?" question often does not look like it needs one. To make conversation mode reliable, add one line to your `~/.claude/CLAUDE.md`:
+
+```
+- When I ask how or why something works, use the explainer skill to decide whether a diagram belongs in the answer.
+```
 
 ## Examples
 
@@ -151,7 +161,7 @@ storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a bea
 - Tested on macOS (Apple Silicon) with Claude Code. Linux setup is written but untested.
 - Each form was tested with subagents doing realistic requests with and without the skill. The skill's biggest gains are in the visual forms: typeset math, consistent color encoding, and a screenshot/frame check that catches overlaps, raw `_` subscripts, broken dark mode, and wrong phone layouts before you see them. For plain text, an unaided model already writes good explanations; the skill mostly adds structure (conclusion first, reproducible steps).
 - The agent cannot watch a video. Video quality is controlled through per-sentence frames and an independent reviewer, which catches layout, math, and sync-order problems, but not, for example, awkward pacing within a sentence.
-- edge-tts is free and sends the narration text to Microsoft's online TTS service. ElevenLabs is supported (with sentence timestamps) if `ELEVENLABS_API_KEY` is set; it sounds more natural but is not needed for clear explainers.
+- edge-tts is free and sends the narration text to Microsoft's online TTS service. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps land within ~0.07 s of the real pauses in our test. It sounds more natural but is not needed for clear explainers.
 
 ## License
 
