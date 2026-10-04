@@ -14,10 +14,10 @@ So ε sets *where* the flat part starts, and the sign of A sets *which side* is 
 
 The policy gradient goes through r: ∇_θ L = (∂L/∂r) · r · ∇_θ log π_θ(a|s). At the start of each update, r = 1 for every sample, so the first step is the plain policy gradient. The clip only takes effect in later epochs and minibatches, after r has drifted.
 
-I built a page to play with this: `ppo-clip.html`. Open it with
+I built a page to play with this: `index.html`. Open it with
 
 ```
-open ppo-clip.html
+open index.html
 ```
 
-It has sliders for ε, A, and r. It plots L(r) with both terms and shades the zero-gradient region, plots ∂L/∂r under it, and adds a map of the whole (r, A) plane. The "Try this" cards animate the key cases. You can also set a starting state in the URL, e.g. `ppo-clip.html?A=-1&r=1.6` (the "wrong way" case).
+It has sliders for ε, A, and r. It plots L(r) with both terms and shades the zero-gradient region, plots ∂L/∂r under it, and adds a map of the whole (r, A) plane. The "Try this" cards animate the key cases. You can also set a starting state in the URL, e.g. `index.html?A=-1&r=1.6` (the "wrong way" case).

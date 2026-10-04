@@ -3,9 +3,10 @@
 In a video, the visuals *are* the explanation. A correct narration over weak visuals is a weak video. Spend most of the effort on the storyboard (step 2) and the review loop (step 6).
 
 ```
-S=<this skill's directory>               # the folder that holds SKILL.md
-PY=~/.venvs/explainer/bin/python
-MANIM=~/.venvs/explainer/bin/manim
+S=<skill folder>                         # the folder that holds SKILL.md (printed when the skill loads)
+VENV=${EXPLAINER_VENV:-$HOME/.venvs/explainer}
+PY=$VENV/bin/python
+MANIM=$VENV/bin/manim
 X=$S/scripts/explainer.py
 ```
 
@@ -58,7 +59,7 @@ Design rules for the storyboard:
 - **Motion carries meaning.** Animate a `ValueTracker` to show "as r grows…", trace a path to show an iteration, slide a dot to show where a sample sits. Decorative motion (spinning, bouncing) distracts.
 - **Concrete anchor.** Every abstract claim gets an instance on screen: numbers in a table, a point on a plot, a specific example.
 - **Fixed layout zones.** Title top (y≈3.4), main stage center, captions bottom (y≈-3.3). Same zones in every scene, so the eye knows where to look.
-- **Fixed color meaning.** Choose 3–5 colors, each meaning one thing (e.g. BLUE = unclipped term, YELLOW = clipped term, GREEN = objective, RED = zero-gradient region). Write the legend at the top of `storyboard.md` and never reuse a color for something else.
+- **Fixed color meaning.** Choose 3–5 colors, each meaning one thing (e.g. BLUE = unclipped term, YELLOW = clipped term, ORANGE = objective, a hatched grey region = zero gradient). Write the legend at the top of `storyboard.md` and never reuse a color for something else. Never let red vs green carry a distinction on its own (color blindness): use blue vs orange, and add a second cue (hatching, dashes, a label).
 - **Labels, not prose.** On-screen text is keywords and labels; never paste the narration onto the screen. More than ~12 words of prose at once is too much.
 - **Pause after a key reveal.** 0.5–1 s of stillness lets it land.
 
@@ -103,6 +104,8 @@ $MANIM -qh --fps 30 scenes.py $IDS             # final: 1080p30 (~3–10 min; ru
 
 Do not use `-a`: it also renders helper base classes, and one crash stops the remaining scenes.
 
+The folder manim writes into (`1080p30`, `480p15`) must match `--quality` on `assemble` and `review`; they stop and list what exists when it does not, instead of mixing resolutions. `-qh` without `--fps 30` writes `1080p60`.
+
 ## 5. Assemble
 
 ```
@@ -130,7 +133,7 @@ This rebuilds `review/` from scratch: one frame at the end of each sentence (`--
 
 Give the reviewer only the frames, `index.md`, `script.json`, `storyboard.md`, and `scenes.py` — not your own summary of what is fixed or why it is fine.
 
-**Narration edits during review** (precision fixes are often wording): edit `script.json`, re-run `tts`, then diff `audio/cues.json` against the previous copy. Only scenes whose cues changed need their `cue(i)` indices and storyboard times checked and their scenes re-rendered.
+**Narration edits during review** (precision fixes are often wording): copy `audio/cues.json` to `audio/cues.prev.json`, edit `script.json`, re-run `tts`, then diff the two. Only scenes whose cues changed need their `cue(i)` indices and storyboard times checked and their scenes re-rendered.
 
 ## 7. Hand over
 

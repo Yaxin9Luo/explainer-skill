@@ -1,3 +1,4 @@
+# Made before scripts/timed.py existed, so this file defines its own Timed class; new videos should import timed.py.
 import json
 from manim import *
 

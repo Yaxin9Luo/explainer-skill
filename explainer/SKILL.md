@@ -7,6 +7,8 @@ description: Choose and produce the clearest form for explaining something — c
 
 The goal is that the user understands, with the least effort on their side. Text, diagrams, interactive pages, and videos cost different amounts to make and to consume. Pick by what the content looks like, not by what is impressive. Several forms in one answer is normal.
 
+Paths: `$S` is the folder that holds this SKILL.md (the Skill tool prints it when the skill loads); `$PY` is `${EXPLAINER_VENV:-$HOME/.venvs/explainer}/bin/python`. The `lint`, `math`, and `snapshot` helpers use only the standard library plus their system tools (LaTeX + dvisvgm for `math`, Chrome for `snapshot`), so any `python3` runs them.
+
 ## 1. Pick the form(s)
 
 | If the content… | Add |
@@ -39,7 +41,9 @@ Most explaining happens mid-conversation, not as a deliverable. There the cost o
 - **Budget:** at most 1–2 inline visuals per reply, and only where the §1 table calls for one and a picture says it faster than a paragraph. No screenshot/review loop for inline visuals; check once before sending: formulas typeset, no overlapping labels, readable in light and dark.
 - Inline widgets usually cannot load KaTeX or be screenshotted. Write sub/superscripts with `<tspan baseline-shift>`, keep formulas short, and follow the widget tool's own design rules (its guide is long; read it once per session, then reuse what you learned).
 - Chat text around the visual: write math as `$…$` where the host renders it, not as code spans. Plots: round axis ticks (0.5, 1.0, …), and a legend that names what each line *means*.
-- **No inline tool** (e.g. a plain terminal): answer in text and offer the visual in one line.
+- **An explicit request is a deliverable.** "Make / draw me a diagram or page" gets a file or Artifact (you may also show it inline); a why/how question gets the inline visual only.
+- For an inline visual this section is enough: read `references/visual.md` only when you write a file, an Artifact, or a page.
+- **No inline tool** (e.g. a plain terminal): a requested visual becomes a file; an unrequested one is offered in one line.
 
 ## 2. Text: ASD-STE100 style
 
@@ -61,4 +65,4 @@ Read `references/video.md` before starting, and `references/video-review.md` for
 4. Render a 480p draft → `explainer.py assemble` → `explainer.py review` (one frame per sentence + contact sheets) → self-check, then an independent reviewer subagent with the checklist → fix → repeat.
 5. Final 1080p render, assemble, one more review, hand over `final.mp4`.
 
-Setup (once per machine): `bash scripts/setup.sh` creates `~/.venvs/explainer` with manim and edge-tts (free TTS) and checks ffmpeg, LaTeX, and dvisvgm.
+Setup (once per machine): `bash $S/scripts/setup.sh` creates the venv (`~/.venvs/explainer`, or `$EXPLAINER_VENV`) with manim and edge-tts (free TTS) and runs `explainer.py check`. A missing LaTeX distribution is the user's call: ask before installing one.

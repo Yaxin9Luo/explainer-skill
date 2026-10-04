@@ -22,9 +22,9 @@ Formulas in any visual must look like LaTeX output, not like code. `L(r) = min( 
   Write `\(r_t(\theta)\)` inline and `$$ … $$` for display formulas. For numbers that update live, call `katex.render(tex, el)` in the update function.
 - **SVG diagrams**: render each formula with the bundled script, then embed it:
   ```
-  ~/.venvs/explainer/bin/python <skill dir>/scripts/explainer.py math 'v_\theta(x_t,t)' --out eq_v.svg
+  python3 $S/scripts/explainer.py math 'v_\theta(x_t,t)' --out eq_v.svg
   ```
-  The output uses `currentColor`, so it follows the theme, and its internal ids are prefixed with the file name, so several formulas can be inlined into one diagram without clashing (render a formula you place twice under two names, or pass `--id-prefix`). Inline it rather than link it, so the diagram stays one file: keep its `viewBox`, and set `x`, `y`, `width`, `height` on the nested `<svg>` (plus `style="color:var(--fg)"`). The command prints the natural size in px; multiply by your scale (≈1.6 suits 15–16 px body text).
+  The output uses `currentColor`, so it follows the theme. Its size is already in px at `--scale` (default 1.6, which suits 15–16 px body text), its XML prolog and `xlink:` attributes are removed, and its internal ids are prefixed with the file name, so several formulas can share one diagram (render a formula you place twice under two names, or pass `--id-prefix`). Paste the `<svg>` element into your diagram (keep its `viewBox`, so the diagram stays one file) and add only `x`, `y`, and `style="color:var(--fg)"`; do not add `width`/`height` again, because a duplicate attribute makes the whole SVG invalid. If `math` is unavailable (no LaTeX or dvisvgm), use `<tspan baseline-shift>` for sub/superscripts, keep heavy formulas in the chat text, or build the visual as an HTML page with KaTeX.
 - In the chat text itself, write math the way the host renders it: `$…$` / `$$…$$` where Markdown math is supported, otherwise light Unicode (x₀, v_θ, ∇).
 - Plain symbols inside short labels (ε, θ, ∇, ≤) are fine as Unicode text. Anything with a subscript, fraction, hat, or more than one operator is a formula: typeset it. If you must fake a subscript in SVG text, use `<tspan baseline-shift="sub" font-size="75%">`, never a literal `_`.
 - Videos already use LaTeX (`MathTex`).
@@ -35,13 +35,14 @@ A diagram earns its place when the content has parts and relations, or a flow. D
 
 - **Real content.** Boxes hold the actual things (tensor shapes, function names, the formula), not "Module A". Arrows say what flows along them (`logits [B,T,V]`, "gradient", "samples").
 - **One reading direction.** Left→right for pipelines, top→bottom for hierarchies. Feedback loops curve back clearly and are labeled.
-- **Encode, don't decorate.** Color and shape mean something (e.g. blue = data, orange = parameters, dashed = no gradient). Add a small legend if there are more than two encodings.
+- **Encode, don't decorate.** Color and shape mean something (e.g. blue = data, orange = parameters, dashed = no gradient). Add a small legend if there are more than two encodings. Never let red vs green carry a distinction on its own (color blindness): use blue vs orange and add a second cue (dashes, hatching, a label).
 - **Few elements.** More than ~12 boxes → split into an overview and a zoom-in.
 - **Short labels:** ≤ 6 words (≈ 12 characters for Chinese/Japanese) per label.
 - **Wires**: avoid crossings by reordering boxes; if two wires must cross, break the lower one with a small gap so it does not read as a junction.
 
 SVG mechanics:
 - Set `viewBox` and no fixed width, so it scales. Leave ≥ 16 px margin inside the viewBox.
+- Give the root `<svg>` `role="img"` and an `aria-label` (or `<title>`) that states the mechanism in one sentence.
 - Use `<marker>` arrowheads; end arrows at box edges, not centers.
 - Theme with CSS variables and `@media (prefers-color-scheme: dark)` inside a `<style>` in the SVG; give the root a background `rect` filled with the variable.
 - Dark mode: fills must stay dark enough for light text (or switch the text color with the fill). Lightened pastel fills under white text are the most common dark-mode bug.
@@ -68,10 +69,10 @@ A page earns its place when the user would want to *turn a knob* and watch the c
 If `scripts/explainer.py snapshot` works on this machine (it needs Chrome/Chromium), run it and look at the PNGs:
 
 ```
-PY=~/.venvs/explainer/bin/python; X=<skill dir>/scripts/explainer.py
-$PY $X snapshot diagram.svg                       # SVG: window sized to the viewBox ratio
-$PY $X snapshot page.html --size 1400x1000
-$PY $X snapshot page.html --size 390x844 --scheme light --out page.phone.png
+X=$S/scripts/explainer.py
+python3 $X snapshot diagram.svg                       # SVG: window sized to the viewBox ratio
+python3 $X snapshot page.html --size 1400x1000
+python3 $X snapshot page.html --size 390x844 --scheme light --out page.phone.png
 ```
 
 `--size` is the viewport, so a phone shot shows only the top of the page; for the whole page pass a tall size (`--size 390x4000`) and look at crops. Check several control states with `--query`, including extremes (smallest/largest values, zero, sign flips) — most layout bugs live there. Snapshots are static: if the page has animations or drag handlers, exercise them once in a browser (or with a short script) before handing over.

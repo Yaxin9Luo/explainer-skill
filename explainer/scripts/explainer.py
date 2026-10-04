@@ -155,10 +155,14 @@ def cmd_tts(a):
 
 def find_video(media, scene_file, sid, quality):
     root = Path(media) / "videos" / Path(scene_file).stem
-    hits = sorted(root.glob(f"{quality}/{sid}.mp4")) or sorted(root.glob(f"*/{sid}.mp4"))
-    if not hits:
-        sys.exit(f"no rendered video for scene {sid} under {root}")
-    return hits[-1]
+    exact = root / quality / f"{sid}.mp4"
+    if exact.exists():
+        return exact
+    found = sorted(q.parent.name for q in root.glob(f"*/{sid}.mp4"))
+    if found:   # never fall back silently: a 480p draft must not become the "final"
+        sys.exit(f"scene {sid} has no '{quality}' render under {root}; it has: {', '.join(found)}. "
+                 f"Pass --quality <one of those>, or re-render (manim -qh --fps 30 writes 1080p30, -ql writes 480p15).")
+    sys.exit(f"no rendered video for scene {sid} under {root}")
 
 
 def cmd_assemble(a):
@@ -262,9 +266,13 @@ def cmd_review(a):
 
 # ---------- lint ----------
 
+CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+
+
 def cmd_lint(a):
     """Flag sentences over the STE length limit in a Markdown answer.
-    Math, code, tables, and headings are not sentences and are skipped."""
+    Math, code, tables, and headings are not sentences and are skipped.
+    Latin text counts words; CJK text has no spaces, so it counts characters."""
     text = Path(a.file).read_text()
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = re.sub(r"\$\$.*?\$\$", "\n\n", text, flags=re.S)   # display math ends a paragraph
@@ -276,11 +284,19 @@ def cmd_lint(a):
         if not line or line.startswith(("#", "|", "<", "---", "![", "*Diagram", "_")):
             continue
         line = re.sub(r"^(?:[-*>]|\d+\.)\s*", "", line)
-        sentences += [x.strip() for x in re.split(r"(?<=[.!?:])\s+", line) if x.strip()]
-    long = [(len(x.split()), x) for x in sentences if len(x.split()) > a.max]
-    for n, x in long:
-        print(f"[{n} words] {x}")
-    print(f"{len(sentences)} sentences, {len(long)} over {a.max} words")
+        sentences += [x.strip() for x in re.split(r"(?<=[.!?:])\s+|(?<=[。！？；：])", line) if x.strip()]
+    flagged = []
+    for x in sentences:
+        c = len(CJK.findall(x))
+        if c >= 5:   # a CJK sentence: its characters plus any Latin words
+            n, limit, unit = c + len(re.findall(r"[A-Za-z0-9_]+", CJK.sub(" ", x))), a.max_cjk, "chars"
+        else:
+            n, limit, unit = len(x.split()), a.max, "words"
+        if n > limit:
+            flagged.append((n, unit, x))
+    for n, unit, x in flagged:
+        print(f"[{n} {unit}] {x}")
+    print(f"{len(sentences)} sentences, {len(flagged)} over the limit ({a.max} words / {a.max_cjk} CJK chars)")
 
 
 # ---------- math ----------
@@ -302,12 +318,17 @@ def cmd_math(a):
     svg = out.read_text()
     svg = re.sub(r"id=(['\"])([^'\"]+)\1", lambda m: f"id={m.group(1)}{prefix}{m.group(2)}{m.group(1)}", svg)
     svg = re.sub(r"href=(['\"])#([^'\"]+)\1", lambda m: f"href={m.group(1)}#{prefix}{m.group(2)}{m.group(1)}", svg)
-    out.write_text(svg)
+    # inlining-safe: plain href (the host SVG needs no xlink namespace), no XML prolog or comment
+    svg = svg.replace("xlink:href=", "href=")
+    svg = re.sub(r"^\s*<\?xml[^>]*\?>\s*", "", svg)
+    svg = re.sub(r"<!--.*?-->\s*", "", svg, flags=re.S)
     m = re.search(r"width=['\"]([\d.]+)pt['\"] height=['\"]([\d.]+)pt['\"]", svg)
+    if m:   # size in px at the requested scale, so the pasted <svg> needs only x and y
+        w, h = float(m.group(1)) * 4 / 3 * a.scale, float(m.group(2)) * 4 / 3 * a.scale   # 1pt = 4/3 px
+        svg = svg.replace(m.group(0), f"width='{w:.1f}' height='{h:.1f}'", 1)
+    out.write_text(svg)
     if m:
-        w, h = float(m.group(1)) * 4 / 3, float(m.group(2)) * 4 / 3   # 1pt = 4/3 px
-        print(f"{out}  natural size {w:.1f}x{h:.1f}px; at scale {a.scale}: "
-              f"{w * a.scale:.0f}x{h * a.scale:.0f}px  (ids prefixed '{prefix}')")
+        print(f"{out}  {w:.0f}x{h:.0f}px at scale {a.scale}  (ids prefixed '{prefix}')")
     else:
         print(out)
 
@@ -376,6 +397,8 @@ def cmd_snapshot(a):
         if not out.exists():
             sys.exit(f"Chrome wrote no screenshot to {out}")
         if win_w > w:  # crop the harness margin off narrow shots
+            if not shutil.which("ffmpeg"):
+                sys.exit("ffmpeg is needed to crop narrow (phone-width) snapshots")
             sh(["ffmpeg", "-y", "-v", "error", "-i", str(out), "-vf", f"crop={w}:{h}:0:0",
                 str(out) + ".tmp.png"])
             os.replace(str(out) + ".tmp.png", out)
@@ -468,12 +491,13 @@ def main():
     li = sub.add_parser("lint", help="STE sentence-length check for a Markdown answer")
     li.add_argument("file")
     li.add_argument("--max", type=int, default=25, help="20 for procedures, 25 descriptive")
+    li.add_argument("--max-cjk", type=int, default=45, help="limit in characters for Chinese/Japanese/Korean sentences")
     li.set_defaults(fn=cmd_lint)
 
     mt = sub.add_parser("math", help="LaTeX formula -> themeable SVG")
     mt.add_argument("latex")
     mt.add_argument("--out", default="eq.svg")
-    mt.add_argument("--scale", type=float, default=1.6, help="only for the size printout")
+    mt.add_argument("--scale", type=float, default=1.6, help="size multiplier; 1.6 suits 15-16 px body text")
     mt.add_argument("--id-prefix", help="prefix for internal ids (default: output file stem)")
     mt.set_defaults(fn=cmd_math)
 
@@ -489,10 +513,11 @@ def main():
     sub.add_parser("check").set_defaults(fn=cmd_check)
     sub.add_parser("voices", help="list ElevenLabs voices").set_defaults(fn=cmd_voices)
 
-    for tool in ("ffmpeg", "ffprobe"):
-        if not shutil.which(tool):
-            sys.exit(f"{tool} not found on PATH")
     a = p.parse_args()
+    if a.cmd in ("tts", "assemble", "review", "frames"):
+        for tool in ("ffmpeg", "ffprobe"):
+            if not shutil.which(tool):
+                sys.exit(f"{tool} not found on PATH (needed for `{a.cmd}`)")
     if a.cmd == "snapshot":
         a.size_given = bool(a.size)
         a.size = a.size or "1400x900"
