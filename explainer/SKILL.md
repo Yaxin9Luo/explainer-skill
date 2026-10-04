@@ -1,6 +1,6 @@
 ---
 name: explainer
-description: Choose and produce the clearest form for explaining something — controlled-English text (ASD-STE100 style), diagrams, interactive HTML pages, or narrated 3Blue1Brown-style explainer videos (Manim + free TTS), alone or combined. Use this whenever the user asks to explain, teach, walk through, or help them understand a concept, mechanism, algorithm, paper, system, codebase, or result and the answer is more than a couple of sentences; whenever they mention STE100 / Simplified Technical English / "controlled English", a "3b1b-style video", an "explainer video", "make me a diagram/page/animation to understand X"; and whenever they say they still don't get a previous explanation. Not for one-line factual lookups.
+description: Choose and produce the clearest form for explaining something — controlled-English text (ASD-STE100 style), diagrams, interactive HTML pages, or narrated 3Blue1Brown-style explainer videos (Manim + free TTS), alone or combined. Use this whenever the user asks why or how something works, or asks to explain, teach, walk through, or help them understand a concept, mechanism, algorithm, paper, system, codebase, or result and the answer is more than a couple of sentences; whenever they mention STE100 / Simplified Technical English / "controlled English", a "3b1b-style video", an "explainer video", "make me a diagram/page/animation to understand X"; and whenever they say they still don't get a previous explanation. Not for one-line factual lookups.
 ---
 
 # Explainer
@@ -34,10 +34,11 @@ Decide per sub-question: one request can need a diagram for one part and plain t
 
 Most explaining happens mid-conversation, not as a deliverable. There the cost of a slow reply is real, so the rules are lighter:
 
-- **Trigger (conservative):** add a visual to a chat reply only when the user signals they want an explanation: "explain", "walk me through", "I don't get it", "draw / show me", or a repeated question. While you are doing a task (editing code, running things), keep explaining in text.
+- **Trigger (conservative):** add a visual to a chat reply only when the user is asking to understand something: a why/how question about a concept or mechanism ("why does PPO need the min?", "how does the KV cache work?"), "explain", "walk me through", "I don't get it", "draw / show me", or a repeated question. Not for narrow factual or code-detail questions, and not while you are doing a task (editing code, running things); there, explain in text.
 - **Inline, not a file:** if the host can render visuals inside the reply (e.g. an inline widget tool), put the diagram there, between the paragraphs it supports, so text and picture interleave. Use a file or Artifact only when the user wants to keep or share it, for a heavier interactive page, or for a video.
 - **Budget:** at most 1–2 inline visuals per reply, and only where the §1 table calls for one and a picture says it faster than a paragraph. No screenshot/review loop for inline visuals; check once before sending: formulas typeset, no overlapping labels, readable in light and dark.
 - Inline widgets usually cannot load KaTeX or be screenshotted. Write sub/superscripts with `<tspan baseline-shift>`, keep formulas short, and follow the widget tool's own design rules (its guide is long; read it once per session, then reuse what you learned).
+- Chat text around the visual: write math as `$…$` where the host renders it, not as code spans. Plots: round axis ticks (0.5, 1.0, …), and a legend that names what each line *means*.
 - **No inline tool** (e.g. a plain terminal): answer in text and offer the visual in one line.
 
 ## 2. Text: ASD-STE100 style
