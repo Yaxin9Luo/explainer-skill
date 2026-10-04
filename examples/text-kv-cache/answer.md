@@ -4,7 +4,7 @@
 
 ![KV cache: work per token with and without the cache (A), and one decode step in one attention layer (B)](kv-cache.svg)
 
-*Diagram file: `kv-cache.svg` (open it with `open kv-cache.svg`). Orange = computed in this step. Blue = read from the KV cache.*
+*Diagram file: `kv-cache.svg` (open it with `open kv-cache.svg` on macOS, `xdg-open kv-cache.svg` on Linux). Orange = computed in this step. Blue = read from the KV cache.*
 
 ### 1. Why the old keys and values do not change
 
