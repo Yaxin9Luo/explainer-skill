@@ -1,0 +1,46 @@
+{
+ "title": "Flow matching: what the network learns",
+ "voice": "en-US-AndrewNeural",
+ "scenes": [
+  {
+   "id": "Intro",
+   "narration": "How do you turn random noise into data? Flow matching answers with a velocity field. A neural network learns, at every point and at every time, which way to move and how fast. To generate, you start from noise and follow the arrows. But there is a puzzle. The network is trained on a target that it can never match exactly. Let us see what it really learns, and why that works."
+  },
+  {
+   "id": "Path",
+   "narration": "We use the simplest case, in one dimension. Time runs from zero to one along the horizontal axis. At time zero we have noise, x zero, drawn from a standard Gaussian. At time one we have data, x one. Here the data are just two points, minus two and plus two, each with probability one half. Pick one noise sample and one data point, independently, and join them with a straight line. At time t, the point on the line is one minus t times x zero, plus t times x one. Its velocity is the time derivative, x one minus x zero. It is the same at every time, so the point moves at a constant speed."
+  },
+  {
+   "id": "Loss",
+   "narration": "Training uses exactly this velocity as the target. Sample a time, a noise point, and a data point. Form the point x t on their line. The network sees x t and t, and must predict x one minus x zero, under a squared error. This is the conditional flow matching loss. Now draw many such pairs. The straight lines cross each other. Look at the point x equals zero, at time one half. One line passes through it with slope plus four, and another with slope minus four. The same input gets two different targets. So the loss can never reach zero."
+  },
+  {
+   "id": "Marginal",
+   "narration": "So what does the network learn? For a squared error, the best prediction for an input is the average of its targets. Here, the average is over all lines that pass through x at time t. We call it the marginal velocity, u t of x. It is the conditional expectation of x one minus x zero, given that x t equals x. Now expand the loss around it. The first term is the distance from the network to the marginal velocity. The second term is the variance of the targets, and it does not depend on the network. The cross term is zero, because the targets average to u t. So our loss has the same gradients as the marginal loss, which in general we cannot compute."
+  },
+  {
+   "id": "Transport",
+   "narration": "Why is u t the field we want? Look at the distribution of x t at a few times. It starts as one Gaussian, splits into two bumps, and ends on the two data points. All lines that end at the same data point carry a conditional distribution, p t of x given x one. The marginal velocity averages these line velocities, weighted by how likely each line is at that point. The continuity equation is linear in density times velocity. So this weighted average moves the whole noise distribution into the data distribution. Following u t from noise gives data."
+  },
+  {
+   "id": "Example",
+   "narration": "Let us check this with real numbers, at time one half. At x equals zero, the two lines have targets plus four and minus four. By symmetry they are equally likely, so the marginal velocity is zero. The network learns zero here, a value it never saw as a target. Now move to x equals one half. The line toward plus two has target plus three. The line toward minus two has target minus five. But the posterior weights are not equal. They are about ninety eight percent and two percent. So the marginal velocity is about two point eight six, pointing toward plus two."
+  },
+  {
+   "id": "Field",
+   "narration": "Do this at every point, and we get the whole marginal field. In closed form, it is the expected data point, minus x, divided by one minus t. Now follow the field from many noise samples. These marginal paths are curved, and they do not cross. Near the middle they hesitate, then split toward the two data points. Compare the training lines. Those are straight, but they cross. The marginal flow is a deterministic map from noise to data."
+  },
+  {
+   "id": "Sampling",
+   "narration": "To generate, draw x zero from the Gaussian. Then solve the differential equation, d x over d t equals v theta of x and t, from time zero to time one. The simplest solver is Euler's method. Take a step of size h along the current velocity, then evaluate the network again. Start at x zero equals zero point four, with four steps of size one quarter. The positions are zero point three, zero point three seven, one point zero nine, and finally two. The sample lands on the data point plus two."
+  },
+  {
+   "id": "OneStep",
+   "narration": "What if we take only one step? At time zero, x t carries no information about the data. So the marginal velocity is the data mean minus x. Here the mean is zero, so the velocity is minus x zero. One Euler step sends every sample to zero, the mean of the data. That is not a data point at all. Straight training lines do not give straight marginal paths. This curvature is why the sampler needs several steps."
+  },
+  {
+   "id": "Recap",
+   "narration": "To recap. The network learns a velocity field, v theta of x and t. It regresses on the per-sample target, x one minus x zero, along straight lines from noise to data. The squared error makes its optimum the conditional average, the marginal velocity. That field moves the noise distribution to the data distribution. The loss stays above zero by the variance of the targets. To sample, integrate the differential equation from noise at time zero to data at time one."
+  }
+ ]
+}
