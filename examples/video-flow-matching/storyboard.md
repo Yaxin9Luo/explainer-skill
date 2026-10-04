@@ -76,8 +76,8 @@ centered at (−2.8, −0.35). Right panel (x≈1.6…6.9) for formulas and tabl
 [5] 19.85 "Toward +2: target +3."                     red line (0,−1)→(1,2), arrow +3
 [6] 22.80 "Toward −2: target −5."                     red line (0,3)→(1,−2), arrow −5
 [7] 25.98 "Posterior weights not equal."              two conditional densities at t=½ (sideways); heights at x=½ marked; w ∝ N(½; ±1, ½²)
-[8] 28.25 "≈ 98% and 2%."                             weights 0.98 / 0.02; −5 line fades to 0.15
-[9] 31.20 "Marginal ≈ 2.86 toward +2."                u = 0.98·3 + 0.02·(−5) ≈ 2.86; green arrow at the point
+[8] 28.25 "≈ 98% and 2%."                             weights 0.982 / 0.018; −5 line fades to 0.15
+[9] 31.20 "Marginal ≈ 2.86 toward +2."                u = 0.982·3 + 0.018·(−5) ≈ 2.86; green arrow at the point
 
 ## Field (28.1 s)
 [0]  0.05 "…whole marginal field."                    green slope-field arrows grow over the plane

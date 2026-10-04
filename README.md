@@ -23,7 +23,7 @@ It also follows the conversation: if you still don't get it, it moves up one for
 
 ## Conversation mode
 
-Most explaining happens mid-conversation, not as a deliverable. When you ask Claude to explain something, or say you don't get it, and the host can render visuals inside the reply (e.g. the Claude desktop app), the answer itself becomes interleaved text and diagrams. It stays light: at most one or two inline visuals, no separate file, roughly a minute per answer in our test. During normal coding work it stays in text and doesn't interrupt.
+Most explaining happens mid-conversation, not as a deliverable. When you ask Claude to explain something, or say you don't get it, and the host can render visuals inside the reply (e.g. the Claude desktop app), the answer itself becomes interleaved text and diagrams. It stays light: at most one or two inline visuals, no separate file; the one answer we timed took about 50 seconds, including the first-time read of the diagram tool's guide. During normal coding work it stays in text and doesn't interrupt.
 
 > *"Why we need min function in PPO's objective?"* (asked in a normal Claude Code desktop session)
 
@@ -47,7 +47,7 @@ All examples below were produced by Claude Code with this skill from a one-line 
 
 [▶ ppo-clip.mp4](examples/video-ppo-clip/ppo-clip.mp4) · 5:02 · 8 scenes · [narration](examples/video-ppo-clip/script.json) · [Manim source](examples/video-ppo-clip/scenes.py)
 
-How it was made: narration first → TTS with sentence timestamps → a per-sentence storyboard → Manim scenes that start each beat on its sentence → 480p draft → one frame per sentence → an independent reviewer agent checks every frame against its sentence (overlaps, math, focus, color meaning) → fixes → 1080p final. In this run the reviewer caught four text overlaps, the min curve appearing one sentence before the narration introduced it, and red used for two opposite meanings; all were fixed before the final render.
+How it was made: narration first → TTS with sentence timestamps → a per-sentence storyboard → Manim scenes that start each beat on its sentence → 480p draft → one frame per sentence → an independent reviewer agent checks every frame against its sentence (overlaps, math, focus, color meaning) → fixes → 1080p final. In this run the reviewer caught four text overlaps, the min curve appearing one sentence before the narration introduced it, and red used for two opposite meanings; all were fixed before the final render ([review log](examples/video-ppo-clip/REVIEW.md)).
 
 ### Video — flow matching, built by a fresh agent from scratch
 
@@ -59,7 +59,7 @@ How it was made: narration first → TTS with sentence timestamps → a per-sent
 
 [▶ flow-matching.mp4](examples/video-flow-matching/flow-matching.mp4) · 5:35 · 10 scenes · [narration](examples/video-flow-matching/script.json) · [storyboard](examples/video-flow-matching/storyboard.md) · [Manim source](examples/video-flow-matching/scenes.py)
 
-This one was made by a subagent that had only the skill, with no other help. It uses a 1-D toy (data at ±2) so every number can be checked: at t = ½ the two straight-line targets through x = ½ are +3 and −5, the posterior weights are e^−0.5 : e^−4.5, and the marginal field has the closed form (2·tanh(2tx/(1−t)²) − x)/(1−t). Two independent review passes found 17 issues, from a rounding slip in the shown arithmetic (0.98·3 + 0.02·(−5) ≠ 2.86) to a narration sentence that was technically wrong; all were fixed before the final render. Its weakest scene, by the agent's own rating: "Transport" asserts that the mixture field moves the mixture density instead of showing the mass flow.
+This one was made by a subagent that had only the skill, with no other help. It uses a 1-D toy (data at ±2) so every number can be checked: at t = ½ the two straight-line targets through x = ½ are +3 and −5, the posterior weights are e^−0.5 : e^−4.5, and the marginal field has the closed form (2·tanh(2tx/(1−t)²) − x)/(1−t). Two independent review passes found about two dozen issues ([lists](examples/video-flow-matching/REVIEW.md)), from a rounding slip in the shown arithmetic (0.98·3 + 0.02·(−5) ≠ 2.86) to a narration sentence that was technically wrong; all were fixed before the final render. Its weakest scene, by the agent's own rating: "Transport" asserts that the mixture field moves the mixture density instead of showing the mass flow.
 
 ### Interactive page — where does PPO's clip switch the gradient off?
 
@@ -72,7 +72,7 @@ This one was made by a subagent that had only the skill, with no other help. It 
   <img src="examples/html-ppo-clip/screenshot.light.png" alt="PPO clip explorer: A = -1, r = 1.6, the min keeps the unclipped term and the gradient pushes r back down">
 </picture>
 
-Every formula is typeset with KaTeX; the readout and plots are computed live. Before handing it over, the agent screenshotted it in light and dark mode, at true phone width, and in six slider states via URL parameters, and fixed ten problems that way, from a mis-pointing gradient arrow to formulas overflowing on phones. [source](examples/html-ppo-clip/index.html) · [chat answer](examples/html-ppo-clip/answer.md)
+Every formula is typeset with KaTeX; the readout and plots are computed live. Before handing it over, the agent screenshotted it in light and dark mode, at true phone width, and in six slider states via URL parameters, and (by its own report) fixed ten problems that way, from a mis-pointing gradient arrow to formulas overflowing on phones. [source](examples/html-ppo-clip/index.html) · [chat answer](examples/html-ppo-clip/answer.md)
 
 ### Diagram — flow matching: what is learned vs. what is integrated
 
@@ -118,13 +118,13 @@ mkdir -p ~/.claude/skills
 ln -s "$(pwd)/explainer-skill/explainer" ~/.claude/skills/explainer
 ```
 
-Text, diagrams, and pages need nothing else. For **videos** (and the `math` / `snapshot` helpers), run the one-time setup:
+Text and interactive pages need nothing else. For **videos**, and for the `math` (typeset formulas in SVG diagrams) and `snapshot` (visual checks) helpers, run the one-time setup:
 
 ```bash
 bash ~/.claude/skills/explainer/scripts/setup.sh
 ```
 
-It creates a Python 3.12 venv at `~/.venvs/explainer` with [Manim](https://www.manim.community/) and [edge-tts](https://github.com/rany2/edge-tts), installs `ffmpeg` / `dvisvgm` / cairo via Homebrew on macOS (prints the apt line on Linux), and runs a dependency check. You also need a LaTeX distribution (MacTeX, BasicTeX, or `brew install texlive`).
+It creates a venv at `~/.venvs/explainer` (Python 3.12 via `uv`, otherwise your `python3`; override with `EXPLAINER_VENV`) with [Manim](https://www.manim.community/) and [edge-tts](https://github.com/rany2/edge-tts), installs `ffmpeg` / `dvisvgm` / cairo via Homebrew on macOS (prints the apt line on Linux), and runs a dependency check. You also need a LaTeX distribution (MacTeX, BasicTeX, or `brew install texlive`).
 
 Then just ask Claude Code to explain something. Ask for a video explicitly; the skill never starts one unasked.
 
@@ -148,22 +148,23 @@ storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a bea
 
 | command | what it does |
 |---|---|
-| `check` | verify ffmpeg, LaTeX, dvisvgm, manim, edge-tts, Chrome |
+| `check` | verify ffmpeg, LaTeX, dvisvgm, manim, edge-tts (Chrome and the ElevenLabs key are reported, not required) |
 | `tts` | narration → audio + per-sentence cues (edge-tts, macOS `say`, or ElevenLabs) |
 | `assemble` | mux each scene with its audio (freeze last frame / pad silence), concatenate |
 | `review` | one frame per sentence (optionally mid-sentence too), 3×2 contact sheets, frame↔sentence index |
 | `frames` | evenly spaced stills from any video |
-| `lint` | flag sentences over the STE length limit in a Markdown answer |
-| `math` | LaTeX → SVG with `currentColor` and collision-free ids, for diagrams |
+| `lint` | flag sentences over the STE length limit in a Markdown answer (Chinese/Japanese counted in characters) |
+| `math` | LaTeX → SVG sized in px, with `currentColor` and collision-free ids, ready to paste into a diagram |
 | `snapshot` | headless-Chrome screenshots of an SVG/HTML page, light + dark, exact phone width, `--query` for slider states |
 | `voices` | list ElevenLabs voices |
 
 ## What I verified, and what I didn't
 
-- Tested on macOS (Apple Silicon) with Claude Code. Linux setup is written but untested.
-- Each form was tested with subagents doing realistic requests with and without the skill. The skill's biggest gains are in the visual forms: typeset math, consistent color encoding, and a screenshot/frame check that catches overlaps, raw `_` subscripts, broken dark mode, and wrong phone layouts before you see them. For plain text, an unaided model already writes good explanations; the skill mostly adds structure (conclusion first, reproducible steps).
+- Tested on macOS (Apple Silicon) with Claude Code. The Linux setup is written but untested; Windows is not supported.
+- Text, diagram, and page requests were tested with subagents with and without the skill; the video pipeline was tested with the skill only (two videos). Trigger accuracy was measured with `claude -p` on 24 realistic prompts × 3 runs (majority vote), with the CLAUDE.md line above installed: 11 of the 12 should-trigger prompts fired and none of the 12 should-not did. The skill's biggest gains are in the visual forms: typeset math, consistent color encoding, and a screenshot/frame check that catches overlaps, raw `_` subscripts, broken dark mode, and wrong phone layouts before you see them. For plain text, an unaided model already writes good explanations; the skill mostly adds structure (conclusion first, reproducible steps).
 - The agent cannot watch a video. Video quality is controlled through per-sentence frames and an independent reviewer, which catches layout, math, and sync-order problems, but not, for example, awkward pacing within a sentence.
-- edge-tts is free and sends the narration text to Microsoft's online TTS service. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps land within ~0.07 s of the real pauses in our test. It sounds more natural but is not needed for clear explainers.
+- Accessibility: both example videos use red against green for their central contrast, which red-green color-blind viewers will partly lose. The skill now forbids that pairing; the examples have not been re-rendered. Videos have no captions yet.
+- edge-tts is free and sends the narration text to Microsoft's online TTS service. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps landed within 0.08 s of the real pauses at the three boundaries we checked (one scene). It sounds more natural but is not needed for clear explainers.
 
 ## License
 
