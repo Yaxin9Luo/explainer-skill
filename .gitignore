@@ -6,3 +6,5 @@ media/
 截屏*.png
 Screenshot*.png
 TWEET.md
+evals/results.jsonl
+evals/quality/results/

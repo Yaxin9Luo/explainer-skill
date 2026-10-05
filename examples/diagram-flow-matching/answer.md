@@ -1,6 +1,6 @@
 Short version: the network predicts the same thing in both phases, a **velocity** v_θ(x_t, t). Training fits that velocity with regression. Sampling uses the trained velocity as the right-hand side of an ODE and integrates it.
 
-I drew the two phases as two lanes that share one network box: `flow_matching.svg` (open it with `open flow_matching.svg`; it follows your light/dark setting).
+I drew the two phases as two lanes that share one network box: `flow_matching.svg` (open it with `open flow_matching.svg` on macOS or `xdg-open flow_matching.svg` on Linux; it follows your light/dark setting).
 
 **Training (no ODE, one network call per example)**
 1. Draw noise x₀ ~ N(0, I), a data point x₁, and a time t ~ U[0, 1].

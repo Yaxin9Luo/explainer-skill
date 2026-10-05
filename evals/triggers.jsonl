@@ -1,0 +1,26 @@
+{"prompt": "Why does the KV cache speed up decoding so much?", "should_trigger": true}
+{"prompt": "Explain how PPO's clipped objective works, I keep forgetting what the min does.", "should_trigger": true}
+{"prompt": "Can you draw me a diagram of how flow matching training and sampling fit together?", "should_trigger": true}
+{"prompt": "I still don't get backprop through time. Try again?", "should_trigger": true}
+{"prompt": "Make me a 3b1b-style explainer video on attention.", "should_trigger": true}
+{"prompt": "Walk me through how git rebase works under the hood.", "should_trigger": true}
+{"prompt": "ELI5 what a monad is.", "should_trigger": true}
+{"prompt": "Explain the architecture of this repo to a new teammate, with a diagram for the README.", "should_trigger": true}
+{"prompt": "解释一下 PPO 里为什么要 clip，我一直没懂。", "should_trigger": true}
+{"prompt": "KV cache 是怎么加速推理的？原理讲一下。", "should_trigger": true}
+{"prompt": "帮我画一张图说明 flow matching 训练和采样的关系。", "should_trigger": true}
+{"prompt": "用 3b1b 的风格给我做一个讲 attention 的视频。", "should_trigger": true}
+{"prompt": "还是没懂，能说人话吗？", "should_trigger": true}
+{"prompt": "给实习生讲讲 transformer 的 decoder 是怎么一步步生成 token 的。", "should_trigger": true}
+{"prompt": "Fix the failing test in test_parser.py.", "should_trigger": false}
+{"prompt": "What's the capital of Australia?", "should_trigger": false}
+{"prompt": "Translate this function to Rust.", "should_trigger": false}
+{"prompt": "Rename `foo` to `parse_config` across the repo.", "should_trigger": false}
+{"prompt": "Run the test suite and show me the failures.", "should_trigger": false}
+{"prompt": "What does the -n flag of grep do?", "should_trigger": false}
+{"prompt": "把这段代码翻译成 Rust。", "should_trigger": false}
+{"prompt": "跑一下测试，看看哪些挂了。", "should_trigger": false}
+{"prompt": "git log 最近 5 条给我看看。", "should_trigger": false}
+{"prompt": "今天上海天气怎么样？", "should_trigger": false}
+{"prompt": "Add a docstring to this function.", "should_trigger": false}
+{"prompt": "Which Python version does this project require?", "should_trigger": false}
