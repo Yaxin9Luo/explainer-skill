@@ -1,0 +1,12 @@
+{
+  "Intro": 23.016,
+  "Path": 40.776,
+  "Loss": 35.688,
+  "Marginal": 40.728,
+  "Transport": 35.616,
+  "Example": 36.24,
+  "Field": 28.104,
+  "Sampling": 34.032,
+  "OneStep": 26.448,
+  "Recap": 30.0
+}
