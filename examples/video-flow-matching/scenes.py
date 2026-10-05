@@ -1,14 +1,18 @@
-import os, sys; sys.path.insert(0, os.path.expanduser("~/.claude/skills/explainer/scripts"))
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.environ.get("EXPLAINER_SCRIPTS", os.path.join(_HERE, "..", "..", "explainer", "scripts")))
 from timed import Timed
 from manim import *
 import numpy as np
 
 # ---------- color legend (see storyboard.md) ----------
-C_NOISE = BLUE
-C_DATA = YELLOW
-C_COND = RED
-C_MARG = GREEN
-C_NET = "#C77DFF"     # purple: network v_theta and sampler
+# Chosen with a color-blindness simulation: the central contrast (straight conditional paths vs the
+# curved marginal field) is orange vs light blue AND dashed vs solid, so it survives without color.
+C_NOISE = "#E0E0E0"   # light grey: noise x0, p0 (= p_t at t = 0)
+C_DATA = "#009E73"    # bluish green: data x1, q
+C_COND = "#E69F00"    # orange, DASHED lines: per-sample (conditional) straight paths and their targets
+C_MARG = "#9CC8FF"    # light blue, SOLID lines: marginal velocity u_t, its field and trajectories
+C_NET = "#B07CFF"     # purple: network v_theta and the sampler that queries it
 C_AX = GREY_B
 
 PLOT_C = np.array([-3.1, -0.3, 0])
@@ -95,7 +99,9 @@ def data_dots(ax):
 
 
 def seg(ax, x0, x1, color=C_COND, sw=3, op=1.0):
-    return Line(ax.c2p(0, x0), ax.c2p(1, x1), color=color, stroke_width=sw, stroke_opacity=op)
+    """A conditional straight path: always dashed, so it differs from a marginal curve without color."""
+    return DashedLine(ax.c2p(0, x0), ax.c2p(1, x1), dash_length=0.14, dashed_ratio=0.62,
+                      color=color, stroke_width=sw, stroke_opacity=op)
 
 
 def slope_arrow(ax, t, x, s, L=0.9, color=C_COND, sw=5):
@@ -119,6 +125,18 @@ def slope_field(ax, color=C_MARG, L=0.28, op=0.8):
             a.set_opacity(op)
             g.add(a)
     return g
+
+
+# LaTeX with xcolor, to color pieces inside a group (e.g. under an \underbrace) that MathTex cannot split
+XTEX = TexTemplate()
+XTEX.add_to_preamble(r"\usepackage{xcolor}")
+
+
+def _tc(c):
+    return lambda tex: r"\textcolor[HTML]{" + c.lstrip("#").upper() + "}{" + tex + "}"
+
+
+net, marg, cond = _tc(C_NET), _tc(C_MARG), _tc(C_COND)
 
 
 def title(s):
@@ -175,12 +193,13 @@ class Intro(Timed):
             t = tp.get_value()
             for d, tr in zip(g, trajs):
                 d.move_to(at(tr, t))
-                d.set_color(interpolate_color(C_NOISE, C_DATA, t))
+                d.set_color(interpolate_color(ManimColor(C_NOISE), ManimColor(C_DATA), t))
         dots.add_updater(upd)
         data = VGroup(*[Dot(CEN + np.array([*(m + s * rng.normal(size=2)), 0]), radius=0.05, color=C_DATA,
                             fill_opacity=0.45) for m in mus for _ in range(30)])
         noise_lab = Text("noise", font_size=28, color=C_NOISE).move_to(CEN + DOWN * 2.75)
         data_lab = Text("data", font_size=28, color=C_DATA).move_to(CEN + np.array([*mus[0], 0]) + UP * 0.8)
+        data_lab.add_background_rectangle(opacity=0.85, buff=0.06).set_z_index(2)
 
         def field():
             t = tf.get_value()
@@ -195,12 +214,14 @@ class Intro(Timed):
                     st = np.array([X, Y, 0])
                     g.add(Arrow(st, st + L * np.array([v[0], v[1], 0]) / n, buff=0, color=C_NET, stroke_width=3,
                                 max_tip_length_to_length_ratio=0.35, max_stroke_width_to_length_ratio=12))
+            if t > 0.85:   # the field is frozen at t = 0.85 (it blows up near 1): fade it instead of showing a stale one
+                g.set_opacity(max(0.0, 1 - (t - 0.85) / 0.1))
             return g
         arrows = always_redraw(field)
         flab = MathTex(r"\text{velocity field }", r"v_\theta(x,t)", font_size=36).to_corner(UR, buff=0.4).shift(DOWN * 0.55)
         flab[1].set_color(C_NET)
         tnum = DecimalNumber(0, num_decimal_places=2, font_size=34)
-        tnum.add_updater(lambda m: m.set_value(min(tf.get_value(), 0.85)))
+        tnum.add_updater(lambda m: m.set_value(tf.get_value()))   # the field itself is clamped at 0.85
         tlab = VGroup(MathTex("t=", font_size=34), tnum).arrange(RIGHT, buff=0.1).to_corner(UL, buff=0.4).shift(DOWN * 0.55)
 
         self.cue(0)
@@ -285,7 +306,7 @@ class Path(Timed):
         self.cue(8)
         same = panel(Text("same at every t", font_size=28, color=C_COND), -1.6)
         self.play(FadeIn(same), run_time=0.5)
-        self.play(tt.animate.set_value(0.95), run_time=1.2)
+        self.play(tt.animate.set_value(0.85), run_time=1.2)
         self.play(tt.animate.set_value(0.15), run_time=1.8)
         self.finish()
 
@@ -315,7 +336,7 @@ class Loss(Timed):
         self.cue(2)
         xtv = 0.4 * -0.8 + 0.6 * 2
         xtd = Dot(o(0.6, xtv), radius=0.09, color=WHITE)
-        xtl = MathTex("x_t", font_size=32).next_to(xtd, LEFT, buff=0.15)
+        xtl = MathTex("x_t", font_size=32).add_background_rectangle(opacity=0.85, buff=0.04).next_to(xtd, UL, buff=0.1)
         self.play(GrowFromCenter(xtd), FadeIn(xtl), run_time=0.8)
         self.cue(3)
         loss = MathTex(r"\mathcal L_{\mathrm{CFM}}(\theta)", r"=", r"\mathbb E\,\big\|\,", r"v_\theta(x_t,t)", r"-",
@@ -323,6 +344,7 @@ class Loss(Timed):
         loss[3].set_color(C_NET); loss[5].set_color(C_COND)
         loss.scale_to_fit_width(min(loss.width, 6.0))
         panel(loss, 1.15)
+        loss[1:].shift(RIGHT * 0.08)
         pred = slope_arrow(ax, 0.6, xtv, 0.6, L=1.0, color=C_NET)
         targ = slope_arrow(ax, 0.6, xtv, 2.8, L=1.0, color=C_COND)
         plab = MathTex(r"v_\theta", font_size=30, color=C_NET).next_to(pred.get_end(), RIGHT, buff=0.1)
@@ -331,7 +353,7 @@ class Loss(Timed):
         self.play(GrowArrow(pred), FadeIn(plab), run_time=0.8)
         self.play(GrowArrow(targ), FadeIn(tlab), run_time=0.8)
         self.cue(4)
-        box = SurroundingRectangle(loss[0], color=WHITE, buff=0.08)
+        box = SurroundingRectangle(loss[0], color=WHITE, buff=0.04)
         self.play(Create(box), run_time=0.8)
         self.cue(5)
         lines = VGroup(*[seg(ax, a, b, sw=2.5, op=0.75) for a, b in zip(TRAIN_X0, TRAIN_X1)])
@@ -363,15 +385,15 @@ class Loss(Timed):
         self.cue(8)
         l1 = seg(ax, -2, 2, sw=5); l2 = seg(ax, 2, -2, sw=5)
         a1 = slope_arrow(ax, 0.5, 0, 4, L=1.1); a2 = slope_arrow(ax, 0.5, 0, -4, L=1.1)
-        n1 = MathTex("+4", font_size=34, color=C_COND).next_to(a1.get_end(), RIGHT, buff=0.1)
-        n2 = MathTex("-4", font_size=34, color=C_COND).next_to(a2.get_end(), RIGHT, buff=0.1)
+        n1 = MathTex("{+4}", font_size=34, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(a1.get_end(), RIGHT, buff=0.1)
+        n2 = MathTex("{-4}", font_size=34, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(a2.get_end(), RIGHT, buff=0.1)
         self.play(Create(l1), run_time=0.9)
         self.play(GrowArrow(a1), FadeIn(n1), run_time=0.6)
         self.play(Create(l2), run_time=0.9)
         self.play(GrowArrow(a2), FadeIn(n2), run_time=0.6)
         self.add(pt)
         self.cue(9)
-        two = panel(MathTex(r"(x{=}0,\ t{=}\tfrac12)", r"\ \to\ ", r"+4", r"\ \text{or}\ ", r"-4", font_size=36), -0.4)
+        two = panel(MathTex(r"(x{=}0,\ t{=}\tfrac12)", r"\ \to\ ", r"{+4}", r"\ \text{or}\ ", r"{-4}", font_size=36), -0.4)
         two[2].set_color(C_COND); two[4].set_color(C_COND)
         self.play(FadeIn(two), run_time=0.9)
         self.cue(10)
@@ -401,9 +423,9 @@ class Marginal(Timed):
         self.play(Write(am), run_time=1.6)
         self.play(GrowArrow(ga), FadeIn(glab), run_time=0.9)
         self.cue(2)
-        self.play(ShowPassingFlash(l1.copy().set_stroke(WHITE, 8), time_width=0.6),
-                  ShowPassingFlash(l2.copy().set_stroke(WHITE, 8), time_width=0.6), run_time=1.3)
+        self.play(l1.animate.set_stroke(width=7), l2.animate.set_stroke(width=7), Indicate(pt, scale_factor=1.6), run_time=1.0)
         self.cue(3)
+        self.play(l1.animate.set_stroke(width=4), l2.animate.set_stroke(width=4), run_time=0.4)
         ud = MathTex(r"u_t(x)", r"=", r"\mathbb E\big[\,", r"x_1-x_0", r"\,\big|\,", r"x_t=x", r"\,\big]", font_size=40)
         ud[0].set_color(C_MARG); ud[3].set_color(C_COND)
         panel(ud, 0.9)
@@ -441,7 +463,8 @@ class Marginal(Timed):
         self.play(Write(B2), run_time=1.2)
         self.play(Create(b2box), FadeIn(b2tag), run_time=0.8)
         self.cue(8)
-        B3 = MathTex(r"+", r"\underbrace{2\,\mathbb E\,\big\langle\,v_\theta-u_t,\ u_t-(x_1-x_0)\,\big\rangle}_{=\,0}", font_size=40)
+        B3 = MathTex(r"+", r"\underbrace{2\,\mathbb E\,\big\langle\," + net(r"v_\theta") + "-" + marg("u_t") + r",\ " + marg("u_t")
+                     + "-" + cond("(x_1-x_0)") + r"\,\big\rangle}_{=\,0}", font_size=40, tex_template=XTEX)
         B3[1:].shift(RIGHT * 0.2)
         B3.move_to(DOWN * 1.75); B3.shift(RIGHT * (lx - B3[0].get_left()[0]))
         why = MathTex(r"\text{cross term} = 0\ \text{ since }\ \mathbb E\big[\,x_1-x_0\,\big|\,x_t\,\big]=u_t(x_t)", font_size=30, color=GREY_B
@@ -454,8 +477,12 @@ class Marginal(Timed):
                       font_size=40).move_to(DOWN * 3.35)
         fin[2].set_color(C_MARG)
         fbox = SurroundingRectangle(fin, color=WHITE, buff=0.12)
+        unk = VGroup(Tex(r"$u_t$: unknown in general,", font_size=28, color=GREY_B),
+                     Tex(r"so we train with $\mathcal L_{\mathrm{CFM}}$", font_size=28, color=GREY_B)).arrange(DOWN, aligned_edge=LEFT, buff=0.1)
         self.play(Write(fin), run_time=1.5)
         self.play(Create(fbox), run_time=0.6)
+        unk.next_to(fbox, RIGHT, buff=0.3)
+        self.play(FadeIn(unk), run_time=0.6)
         self.finish()
 
 
@@ -473,7 +500,7 @@ class Transport(Timed):
         tt = ValueTracker(0.0)
         prof = always_redraw(lambda: side_density(ax, tt.get_value(), pt_pdf(tt.get_value()), color=WHITE, fill=0.15,
                                                   cap=min(0.32, 0.9 * (1 - tt.get_value()))))
-        plab = always_redraw(lambda: MathTex(r"p_t", font_size=32).next_to(o(tt.get_value(), 2.6), RIGHT, buff=0.05))
+        plab = always_redraw(lambda: MathTex(r"p_t", font_size=32).next_to(o(tt.get_value(), 2.6), RIGHT, buff=0.18))
         self.play(FadeIn(prof), FadeIn(plab), run_time=0.8)
         self.cue(2)
         copies = VGroup()
@@ -486,8 +513,9 @@ class Transport(Timed):
         copies.add(c); self.add(c)
         self.remove(prof); self.play(FadeOut(plab), run_time=0.3)
         self.cue(3)
-        comps = VGroup(*[side_density(ax, 0.5, (lambda s: (lambda x: 0.5 * gauss(x, s, 0.5)))(s),
-                                      color=C_COND, fill=0.25, sw=3.5, closed=False) for s in (-1, 1)])
+        comps = VGroup(*[DashedVMobject(side_density(ax, 0.5, (lambda s: (lambda x: 0.5 * gauss(x, s, 0.5)))(s),
+                                                     color=C_COND, fill=0.25, sw=3.5, closed=False), num_dashes=60)
+                         for s in (-1, 1)])
         cl = VGroup(*[seg(ax, x0, x1, sw=2, op=0.55) for x1 in (2, -2) for x0 in (-2, -1, 0, 1, 2)])
         clab = VGroup(MathTex(r"p_t(x|x_1{=}{+2})", font_size=28, color=C_COND).next_to(o(0.5 + 0.4 * 0.5 * gauss(1, 1, 0.5), 1.0), RIGHT, buff=0.1),
                       MathTex(r"p_t(x|x_1{=}{-2})", font_size=28, color=C_COND).next_to(o(0.5 + 0.4 * 0.5 * gauss(1, 1, 0.5), -1.0), RIGHT, buff=0.1))
@@ -522,8 +550,8 @@ class Transport(Timed):
         tr[0].set_color(C_NOISE); tr[2].set_color(C_DATA); tr[1].set_color(C_MARG)
         panel(tr, -2.65)
         self.play(VGroup(c1, avg).animate.set_opacity(0.4), FadeOut(comps), FadeOut(clab), run_time=0.6)
-        self.play(Write(tr), Indicate(nd, color=C_NOISE), run_time=1.4)
-        self.play(Indicate(dd, color=C_DATA), run_time=0.8)
+        self.play(Write(tr), nd.animate.set_fill(opacity=0.55), run_time=1.0)
+        self.play(nd.animate.set_fill(opacity=0.22), LaggedStart(*[Indicate(d, color=C_DATA, scale_factor=1.8) for d in dd]), run_time=1.2)
         self.cue(7)
         trajs = VGroup(*[curve(ax, *marg_traj(x0), sw=3) for x0 in [-1.5, -0.6, -0.15, 0.3, 1.0, 1.8]])
         self.play(LaggedStart(*[Create(c) for c in trajs], lag_ratio=0.1), run_time=1.8)
@@ -545,9 +573,9 @@ class Example(Timed):
         pt = Dot(o(0.5, 0), radius=0.1, color=WHITE)
         l1 = seg(ax, -2, 2, sw=4); l2 = seg(ax, 2, -2, sw=4)
         a1 = slope_arrow(ax, 0.5, 0, 4, L=1.0); a2 = slope_arrow(ax, 0.5, 0, -4, L=1.0)
-        n1 = MathTex("+4", font_size=32, color=C_COND).next_to(a1.get_end(), RIGHT, buff=0.08)
-        n2 = MathTex("-4", font_size=32, color=C_COND).next_to(a2.get_end(), RIGHT, buff=0.08)
-        r1 = MathTex(r"x=0:", r"\quad\text{targets}\ ", r"+4,\ -4", font_size=34)
+        n1 = MathTex("{+4}", font_size=32, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(a1.get_end(), RIGHT, buff=0.08)
+        n2 = MathTex("{-4}", font_size=32, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(a2.get_end(), RIGHT, buff=0.08)
+        r1 = MathTex(r"x=0:", r"\quad\text{targets}\ ", r"{+4},\ {-4}", font_size=34)
         r1[2].set_color(C_COND)
         r1.move_to([PANEL_X, 2.3, 0])
         self.play(GrowFromCenter(pt), Create(l1), Create(l2), run_time=1.2)
@@ -570,7 +598,7 @@ class Example(Timed):
         self.play(FadeIn(r3), run_time=0.4)
         self.cue(5)
         m1_ = seg(ax, -1, 2, sw=4); b1 = slope_arrow(ax, 0.5, 0.5, 3, L=1.0)
-        k1 = MathTex("+3", font_size=32, color=C_COND).next_to(b1.get_end(), RIGHT, buff=0.08)
+        k1 = MathTex("{+3}", font_size=32, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(b1.get_end(), RIGHT, buff=0.08)
         t3 = MathTex(r"\to{+2}:\ ", r"+3", font_size=34).next_to(r3, RIGHT, buff=0.3)
         t3[1].set_color(C_COND)
         self.play(Create(m1_), run_time=0.8)
@@ -578,20 +606,24 @@ class Example(Timed):
         self.add(pt)
         self.cue(6)
         m2_ = seg(ax, 3, -2, sw=4); b2 = slope_arrow(ax, 0.5, 0.5, -5, L=1.0)
-        k2 = MathTex("-5", font_size=32, color=C_COND).next_to(b2.get_end(), RIGHT, buff=0.08)
+        k2 = MathTex("{-5}", font_size=32, color=C_COND).add_background_rectangle(opacity=0.85, buff=0.04).next_to(b2.get_end(), RIGHT, buff=0.08)
         t4 = MathTex(r"\to{-2}:\ ", r"-5", font_size=34).next_to(t3, RIGHT, buff=0.4)
         t4[1].set_color(C_COND)
         self.play(Create(m2_), run_time=0.8)
         self.play(GrowArrow(b2), FadeIn(k2), FadeIn(t4), run_time=0.8)
         self.add(pt)
         self.cue(7)
-        comps = VGroup(*[side_density(ax, 0.5, (lambda s: (lambda x: 0.5 * gauss(x, s, 0.5)))(s), color=C_COND,
-                                      sw=3, width=-0.5, closed=False) for s in (-1, 1)])
+        comps = VGroup(*[DashedVMobject(side_density(ax, 0.5, (lambda s: (lambda x: 0.5 * gauss(x, s, 0.5)))(s),
+                                                     color=C_COND, sw=3, width=-0.5, closed=False), num_dashes=60)
+                         for s in (-1, 1)])
         hp = 0.5 * 0.5 * gauss(0.5, 1, 0.5); hm = 0.5 * 0.5 * gauss(0.5, -1, 0.5)
         bars = VGroup(Line(o(0.5, 0.5), o(0.5 - hp, 0.5), color=WHITE, stroke_width=7))
         w1 = MathTex(r"w\ \propto\ \mathcal N(\tfrac12;\,\pm1,\,\tfrac14)", r"\ \Rightarrow\ ", r"e^{-0.5}:e^{-4.5}", font_size=34)
         w1.move_to([PANEL_X, -0.55, 0])
-        self.play(FadeIn(comps), VGroup(m1_, m2_, b1, b2, k1, k2).animate.set_opacity(0.3), run_time=0.8)
+        clab = VGroup(*[MathTex(rf"p_t(x\,|\,x_1{{=}}{{{v}}})", font_size=26, color=C_COND)
+                        .add_background_rectangle(opacity=0.85, buff=0.05).move_to(o(0.3, y))
+                        for v, y in (("+2", 2.35), ("-2", -2.35))])
+        self.play(FadeIn(comps), FadeIn(clab), VGroup(m1_, m2_, b1, b2, k1, k2).animate.set_opacity(0.3), run_time=0.8)
         self.play(Create(bars), FadeIn(w1), run_time=1.0)
         self.cue(8)
         w2 = MathTex(r"\approx\ 0.982\ :\ 0.018", font_size=36).move_to([PANEL_X, -1.3, 0])
@@ -601,8 +633,8 @@ class Example(Timed):
         r4[0].set_color(C_MARG); r4[4].set_color(C_MARG)
         r4.scale_to_fit_width(min(r4.width, 6.0)).move_to([PANEL_X, -2.2, 0])
         gb = slope_arrow(ax, 0.5, 0.5, 2.86, L=1.0, color=C_MARG, sw=6)
-        gl = MathTex("2.86", font_size=32, color=C_MARG).next_to(gb.get_end(), UP, buff=0.12)
-        self.play(FadeOut(comps), FadeOut(bars), FadeOut(b1), FadeOut(k1), m1_.animate.set_opacity(1), Write(r4), run_time=1.6)
+        gl = MathTex("2.86", font_size=32, color=C_MARG).add_background_rectangle(opacity=0.85, buff=0.04).next_to(gb.get_end(), UP, buff=0.12)
+        self.play(FadeOut(comps), FadeOut(clab), FadeOut(bars), FadeOut(b1), FadeOut(k1), m1_.animate.set_opacity(1), Write(r4), run_time=1.6)
         self.play(GrowArrow(gb), FadeIn(gl), run_time=0.8)
         self.finish()
 
@@ -637,7 +669,7 @@ class Field(Timed):
         self.cue(4)
         mid = VGroup(trajs[5], trajs[6])
         ell = DashedVMobject(Ellipse(width=2.6, height=0.9, color=WHITE, stroke_width=2.5).move_to(o(0.5, 0)), num_dashes=30)
-        hes = Text("hesitate, then split", font_size=26).add_background_rectangle(opacity=0.85, buff=0.08).move_to(o(0.5, -0.62))
+        hes = Text("hesitate, then split", font_size=26).set_stroke(BLACK, 6, background=True).set_z_index(3).move_to(o(0.5, -0.62))
         self.play(mid.animate.set_stroke(color=WHITE, width=6), Create(ell), FadeIn(hes), run_time=1.2)
         self.play(mid.animate.set_stroke(color=C_MARG, width=4.5), run_time=0.8)
         self.cue(5)
@@ -659,13 +691,12 @@ class Field(Timed):
         for t, x in found[::max(1, len(found) // 6)][:6]:
             circ.add(Circle(radius=0.14, color=WHITE, stroke_width=3).move_to(o(t, x)))
         self.play(LaggedStart(*[Create(c) for c in circ], lag_ratio=0.15), run_time=1.0)
-        self.play(FadeOut(circ), run_time=0.4)
         self.cue(7)
         mp = MathTex(r"x_0>0\ \mapsto\ +2,\qquad x_0<0\ \mapsto\ -2", font_size=34)
         panel(mp, -1.0)
         dm = Text("deterministic map: noise → data", font_size=26, color=C_MARG)
         panel(dm, -1.75)
-        self.play(FadeOut(tl), trajs.animate.set_stroke(opacity=1), FadeIn(mp), FadeIn(dm), run_time=1.2)
+        self.play(FadeOut(tl), FadeOut(circ), trajs.animate.set_stroke(opacity=1), FadeIn(mp), FadeIn(dm), run_time=1.2)
         self.finish()
 
 
@@ -682,7 +713,8 @@ class Sampling(Timed):
         d0 = Dot(o(0, x0), radius=0.09, color=C_NOISE)
         self.cue(0)
         self.play(FadeIn(ttl), run_time=0.8)
-        self.play(GrowFromCenter(d0), Indicate(nd, color=C_NOISE), run_time=1.0)
+        self.play(GrowFromCenter(d0), nd.animate.set_fill(opacity=0.55), run_time=0.6)
+        self.play(nd.animate.set_fill(opacity=0.22), run_time=0.4)
         self.cue(1)
         ode = MathTex(r"\frac{dx}{dt}", r"=", r"v_\theta(x,t)", r",\quad x(0)=x_0\sim\mathcal N(0,1)", font_size=36)
         ode[2].set_color(C_NET)
@@ -700,8 +732,10 @@ class Sampling(Timed):
         ticks = VGroup(*[DashedLine(o(k / 4, -3), o(k / 4, 3), color=GREY_D, stroke_width=1.5) for k in (1, 2, 3)])
         br = BraceBetweenPoints(o(0, -2.75), o(0.25, -2.75), direction=UP, color=GREY_B)
         bl = MathTex("h", font_size=32, color=GREY_B).next_to(br, UP, buff=0.08)
+        x1_ = x0 + 0.25 * u1(x0, 0)
+        pre = Arrow(o(0, x0), o(0.25, x1_), buff=0, color=C_NET, stroke_width=5, max_tip_length_to_length_ratio=0.15).set_opacity(0.45)
         self.play(Create(ticks), FadeIn(br), FadeIn(bl), run_time=1.2)
-        self.play(Indicate(eu[4:], color=C_NET), run_time=1.0)
+        self.play(Indicate(eu[4:], color=C_NET), GrowArrow(pre), run_time=1.0)
         self.cue(4)
         xs = euler(x0, 4)
         hdr = VGroup(MathTex("k", font_size=32), MathTex("t_k", font_size=32), MathTex("x_k", font_size=32))
@@ -724,7 +758,7 @@ class Sampling(Timed):
             a = Arrow(o(k / 4, xs[k]), o((k + 1) / 4, xs[k + 1]), buff=0, color=C_NET, stroke_width=5,
                       max_tip_length_to_length_ratio=0.15)
             nd_ = Dot(o((k + 1) / 4, xs[k + 1]), radius=0.08, color=C_NET if k < 3 else C_DATA)
-            self.play(GrowArrow(a), FadeIn(rows[k + 1]), run_time=1.0)
+            self.play(GrowArrow(a), FadeIn(rows[k + 1]), *([FadeOut(pre)] if k == 0 else []), run_time=1.0)
             self.play(FadeIn(nd_), run_time=0.3)
         self.cue(6)
         self.play(Flash(o(1, 2), color=WHITE, line_length=0.3, flash_radius=0.3), Indicate(rows[4][2], color=C_DATA), run_time=1.2)
@@ -769,19 +803,19 @@ class OneStep(Timed):
         self.play(GrowFromCenter(end), Write(f2), FadeIn(lab), run_time=1.4)
         self.cue(5)
         cx = Cross(scale_factor=0.18, stroke_color=WHITE, stroke_width=6).move_to(o(1, 0))
-        nl = Text("data mean, not data", font_size=24).next_to(o(1, 0), RIGHT, buff=0.3).shift(UP * 0.3)
-        self.play(Create(cx), FadeIn(nl), run_time=0.9)
+        nl = Text("data mean, not data", font_size=24).next_to(cx, DR, buff=0.15)
+        self.play(FadeOut(lab), Create(cx), FadeIn(nl), run_time=0.9)
         self.cue(6)
         tl = VGroup(*[seg(ax, a, b, sw=2.5, op=0.55) for a, b in zip(TRAIN_X0[:8], TRAIN_X1[:8])])
         tr = VGroup(*[curve(ax, *marg_traj(x0), sw=3.5) for x0 in TRAJ_X0])
-        self.play(FadeOut(one), FadeOut(f2), FadeOut(lab), FadeIn(tl), run_time=0.7)
+        self.play(FadeOut(one), FadeOut(f2), FadeIn(tl), run_time=0.7)
         self.play(LaggedStart(*[Create(c) for c in tr], lag_ratio=0.05), run_time=1.8)
         self.cue(7)
         xs = euler(0.4, 4)
         four = VGroup(*[Line(o(k / 4, xs[k]), o((k + 1) / 4, xs[k + 1]), color=C_NET, stroke_width=5) for k in range(4)])
-        fl = Text("4 steps: lands on +2", font_size=24, color=C_NET); panel(fl, -1.2)
+        fl = Text("4 steps: lands on +2", font_size=24, color=C_NET).set_stroke(BLACK, 5, background=True).move_to(o(0.55, 2.7))
         cv = Text("curved paths → several steps", font_size=28); panel(cv, -2.0)
-        self.play(FadeOut(tl), tr.animate.set_stroke(opacity=0.4), run_time=0.6)
+        self.play(FadeOut(tl), tr.animate.set_stroke(opacity=0.4), VGroup(cx, nl).animate.set_opacity(0.3), run_time=0.6)
         self.play(Create(four), FadeIn(fl), run_time=1.4)
         self.play(FadeIn(cv), run_time=0.6)
         self.finish()
@@ -794,14 +828,15 @@ class Recap(Timed):
         items = [
             Tex(r"1.\ learns a velocity field ", r"$v_\theta(x,t)$", font_size=40),
             Tex(r"2.\ regresses on ", r"$x_1-x_0$", r" along ", r"$x_t=(1-t)\,x_0+t\,x_1$", font_size=40),
-            Tex(r"3.\ optimum: ", r"$v^*=u_t(x)=\mathbb E[x_1-x_0\mid x_t=x]$", font_size=40),
+            Tex(r"3.\ optimum: ", r"$v^*=", r"u_t(x)", r"=\mathbb E[", r"x_1-x_0", r"\mid x_t=x]$", font_size=40),
             Tex(r"4.\ ", r"$u_t$", r" moves ", r"$p_0$", r" to ", r"$p_1$", r" (continuity equation)", font_size=40),
-            Tex(r"5.\ ", r"$\min_\theta \mathcal L_{\mathrm{CFM}}=\mathbb E\,\|x_1-x_0-u_t(x_t)\|^2>0$", font_size=40),
+            Tex(r"5.\ ", r"$\min_\theta \mathcal L_{\mathrm{CFM}}=\mathbb E\,\|", r"x_1-x_0", r"-", r"u_t(x_t)", r"\|^2>0$", font_size=40),
             Tex(r"6.\ sample: ", r"$\dot x=v_\theta(x,t)$", r" from $t=0$ (noise) to $t=1$ (data)", font_size=40),
         ]
         items[0][1].set_color(C_NET)
         items[1][1].set_color(C_COND)
-        items[2][1].set_color(C_MARG)
+        items[2][2].set_color(C_MARG); items[2][4].set_color(C_COND)   # pieces 1..5 form one math run
+        items[4][2].set_color(C_COND); items[4][4].set_color(C_MARG)
         items[3][1].set_color(C_MARG); items[3][3].set_color(C_NOISE); items[3][5].set_color(C_DATA)
         items[5][1].set_color(C_NET)
         g = VGroup(*items).arrange(DOWN, aligned_edge=LEFT, buff=0.42)

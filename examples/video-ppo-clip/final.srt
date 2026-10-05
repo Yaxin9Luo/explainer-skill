@@ -1,0 +1,438 @@
+1
+00:00:00,050 --> 00:00:03,675
+PPO collects a batch of experience
+with its current policy.
+
+2
+00:00:03,725 --> 00:00:07,687
+Then it runs several epochs of
+gradient ascent on that same batch.
+
+3
+00:00:07,737 --> 00:00:08,813
+Here is the problem.
+
+4
+00:00:08,863 --> 00:00:13,350
+After a few steps, the policy is no
+longer the one that collected the data.
+
+5
+00:00:13,400 --> 00:00:17,125
+How far can we move it before the
+old data stops telling the truth?
+
+6
+00:00:17,175 --> 00:00:20,675
+PPO answers with one objective,
+the clipped surrogate.
+
+7
+00:00:20,725 --> 00:00:25,163
+Let's read it piece by piece: the
+ratio, the clip, and the min.
+
+8
+00:00:25,434 --> 00:00:27,421
+Start with the probability ratio.
+
+9
+00:00:27,471 --> 00:00:30,934
+For each sampled state and
+action, r is the probability
+
+10
+00:00:30,984 --> 00:00:33,822
+of that action under the
+new policy, divided by its
+
+11
+00:00:33,872 --> 00:00:37,184
+probability under the old
+policy that collected the data.
+
+12
+00:00:37,234 --> 00:00:42,059
+At the start of each update, the two
+policies are equal, so r is exactly one.
+
+13
+00:00:42,109 --> 00:00:46,022
+Multiply r by the advantage estimate,
+and average over the batch.
+
+14
+00:00:46,072 --> 00:00:49,247
+This is the conservative
+policy iteration surrogate.
+
+15
+00:00:49,297 --> 00:00:51,572
+It is an importance-sampled
+estimate of how
+
+16
+00:00:51,622 --> 00:00:54,309
+much the new policy
+improves on the old one.
+
+17
+00:00:54,359 --> 00:00:59,421
+At r equal to one, its gradient is
+exactly the standard policy gradient.
+
+18
+00:00:59,471 --> 00:01:03,146
+But the estimate is only
+reliable near r equal to one.
+
+19
+00:01:03,196 --> 00:01:05,446
+And the objective is linear in r.
+
+20
+00:01:05,496 --> 00:01:09,684
+With a positive advantage, it
+rewards pushing r up without limit.
+
+21
+00:01:09,734 --> 00:01:11,509
+Nothing in it says stop.
+
+22
+00:01:11,770 --> 00:01:13,820
+So PPO clips the ratio.
+
+23
+00:01:13,870 --> 00:01:19,207
+Clip of r keeps r inside the interval from
+one minus epsilon to one plus epsilon.
+
+24
+00:01:19,257 --> 00:01:23,045
+A common choice is epsilon
+equal to zero point two,
+
+25
+00:01:23,095 --> 00:01:26,207
+so the interval is zero point
+eight to one point two.
+
+26
+00:01:26,257 --> 00:01:29,345
+Outside the interval, the
+clipped ratio is flat.
+
+27
+00:01:29,395 --> 00:01:31,795
+A flat function has zero gradient.
+
+28
+00:01:31,845 --> 00:01:34,132
+So once the ratio leaves the interval,
+
+29
+00:01:34,182 --> 00:01:37,320
+the clipped term gives no
+incentive to push it further.
+
+30
+00:01:37,370 --> 00:01:39,745
+But the clip alone is not the full story.
+
+31
+00:01:39,795 --> 00:01:44,095
+PPO takes the minimum of the clipped
+term and the unclipped term.
+
+32
+00:01:44,354 --> 00:01:46,029
+Take a positive advantage.
+
+33
+00:01:46,079 --> 00:01:49,804
+The action was better than expected,
+so we want to make it more likely.
+
+34
+00:01:49,854 --> 00:01:54,516
+Here is the unclipped term, r times
+A, a line through the origin.
+
+35
+00:01:54,566 --> 00:01:55,891
+Here is the clipped term.
+
+36
+00:01:55,941 --> 00:02:00,016
+It follows the same line inside the
+interval, and it is flat outside.
+
+37
+00:02:00,066 --> 00:02:02,466
+The objective is the minimum of the two.
+
+38
+00:02:02,516 --> 00:02:07,266
+Above one plus epsilon, the clipped
+term is smaller, so the min picks it.
+
+39
+00:02:07,316 --> 00:02:11,779
+The objective is flat, and this
+sample contributes zero gradient.
+
+40
+00:02:11,829 --> 00:02:13,992
+The good action is
+already more than twenty
+
+41
+00:02:14,042 --> 00:02:17,292
+percent more likely than
+before, so we stop pushing.
+
+42
+00:02:17,342 --> 00:02:22,504
+Below one minus epsilon, the unclipped
+line is smaller, so the min keeps it.
+
+43
+00:02:22,554 --> 00:02:24,229
+The slope is still positive.
+
+44
+00:02:24,279 --> 00:02:26,991
+If an update made this
+good action less likely,
+
+45
+00:02:27,041 --> 00:02:29,391
+the gradient still pulls it back up.
+
+46
+00:02:29,658 --> 00:02:31,258
+Now a negative advantage.
+
+47
+00:02:31,308 --> 00:02:35,170
+The action was worse than expected,
+so we want to make it less likely.
+
+48
+00:02:35,220 --> 00:02:36,446
+Both terms flip.
+
+49
+00:02:36,496 --> 00:02:40,083
+The unclipped term, r
+times A, now slopes down.
+
+50
+00:02:40,133 --> 00:02:42,683
+Below one minus epsilon, the clipped term
+
+51
+00:02:42,733 --> 00:02:45,558
+is smaller, so the min
+picks the flat part.
+
+52
+00:02:45,608 --> 00:02:47,221
+The gradient is zero.
+
+53
+00:02:47,271 --> 00:02:52,020
+The bad action is already more than twenty
+percent less likely, so we stop pushing.
+
+54
+00:02:52,070 --> 00:02:57,408
+Above one plus epsilon, the unclipped
+line is smaller, so the min keeps it.
+
+55
+00:02:57,458 --> 00:03:01,108
+The objective keeps falling
+as r grows, without a bound.
+
+56
+00:03:01,158 --> 00:03:03,733
+If an update made the
+bad action more likely,
+
+57
+00:03:03,783 --> 00:03:07,758
+the full penalty applies, and
+the gradient pushes r back down.
+
+58
+00:03:08,026 --> 00:03:09,351
+Let's check with numbers.
+
+59
+00:03:09,401 --> 00:03:14,151
+Epsilon is zero point two, and the
+advantage is plus or minus two.
+
+60
+00:03:14,201 --> 00:03:15,038
+Case one.
+
+61
+00:03:15,088 --> 00:03:18,264
+Advantage plus two, ratio one point five.
+
+62
+00:03:18,314 --> 00:03:19,789
+Unclipped gives three.
+
+63
+00:03:19,839 --> 00:03:23,713
+Clipped gives one point two times
+two, which is two point four.
+
+64
+00:03:23,763 --> 00:03:27,238
+The min is the clipped value,
+so the gradient is zero.
+
+65
+00:03:27,288 --> 00:03:28,089
+Case two.
+
+66
+00:03:28,139 --> 00:03:31,539
+Advantage plus two, ratio zero point six.
+
+67
+00:03:31,589 --> 00:03:35,526
+Unclipped gives one point two,
+clipped gives one point six.
+
+68
+00:03:35,576 --> 00:03:39,201
+The min is the unclipped
+value, so the gradient flows.
+
+69
+00:03:39,251 --> 00:03:40,226
+Case three.
+
+70
+00:03:40,276 --> 00:03:43,576
+Advantage minus two, ratio one point five.
+
+71
+00:03:43,626 --> 00:03:47,763
+Unclipped gives minus three,
+clipped gives minus two point four.
+
+72
+00:03:47,813 --> 00:03:52,439
+The min is unclipped, so the gradient
+flows and pushes the ratio down.
+
+73
+00:03:52,489 --> 00:03:53,426
+Case four.
+
+74
+00:03:53,476 --> 00:03:56,964
+Advantage minus two, ratio zero point six.
+
+75
+00:03:57,014 --> 00:04:01,801
+Unclipped gives minus one point two,
+clipped gives minus one point six.
+
+76
+00:04:01,851 --> 00:04:05,101
+The min is clipped, so
+the gradient is zero.
+
+77
+00:04:05,354 --> 00:04:06,542
+So what does the min do?
+
+78
+00:04:06,592 --> 00:04:11,254
+It makes the objective a pessimistic
+lower bound on the unclipped surrogate.
+
+79
+00:04:11,304 --> 00:04:13,717
+The clip takes effect
+only when the ratio has
+
+80
+00:04:13,767 --> 00:04:16,717
+moved in the direction that
+improves the objective.
+
+81
+00:04:16,767 --> 00:04:20,454
+When the ratio moves in the direction
+that makes the objective worse,
+
+82
+00:04:20,504 --> 00:04:24,404
+the min keeps the unclipped term,
+so that change counts in full.
+
+83
+00:04:24,454 --> 00:04:28,879
+Without the min, the clipped term alone
+would also be flat in those regions.
+
+84
+00:04:28,929 --> 00:04:31,654
+The gradient would be zero
+exactly where the policy
+
+85
+00:04:31,704 --> 00:04:34,542
+moved the wrong way, and
+nothing would correct it.
+
+86
+00:04:34,592 --> 00:04:35,591
+One caution.
+
+87
+00:04:35,641 --> 00:04:37,816
+Clipping is not a hard trust region.
+
+88
+00:04:37,866 --> 00:04:40,692
+It removes the incentive
+to leave the interval,
+
+89
+00:04:40,742 --> 00:04:43,491
+but the ratio can still end up outside it.
+
+90
+00:04:43,746 --> 00:04:44,609
+To recap.
+
+91
+00:04:44,659 --> 00:04:47,683
+The ratio lets us reuse
+data from the old policy.
+
+92
+00:04:47,733 --> 00:04:53,058
+The clip removes the incentive to move
+the ratio past one plus or minus epsilon.
+
+93
+00:04:53,108 --> 00:04:56,021
+And the min makes sure the
+clip only ignores changes that
+
+94
+00:04:56,071 --> 00:04:59,983
+would improve the objective,
+never changes that make it worse.
+

@@ -22,7 +22,7 @@ import json
 import os
 import sys
 
-from manim import Scene
+from manim import Scene, Wait
 
 if not os.path.exists("audio/durations.json"):
     sys.exit(f"timed.py: audio/durations.json not found in {os.getcwd()} — run manim from the "
@@ -53,7 +53,8 @@ class Timed(Scene):
 
     def play(self, *args, **kwargs):
         super().play(*args, **kwargs)
-        self._last_motion = self.renderer.time
+        if not all(isinstance(x, Wait) for x in args):   # Scene.wait() is a play(Wait(...)): not motion
+            self._last_motion = self.renderer.time
 
     def until(self, t):
         dt = t - self.renderer.time
@@ -74,10 +75,11 @@ class Timed(Scene):
 
     def finish(self, extra=0.0):
         """Hold the last frame to the end of the narration, then print the scene summary."""
-        hold = self.T - self._last_motion
+        last = self._last_motion
+        hold = self.T - last
         self.until(self.T + extra)
         if hold > HOLD_WARN:
-            _log(f"{self.sid}: animation ended at {self._last_motion:.1f}s, screen holds still for the last "
+            _log(f"{self.sid}: animation ended at {last:.1f}s, screen holds still for the last "
                  f"{hold:.1f}s of narration — add a beat or slow one down")
         if self._late:
             worst = max(self._late, key=lambda x: x[1])
