@@ -139,9 +139,25 @@ def write_atomic(tmp_path, out):
     os.replace(tmp_path, out)
 
 
+def edge_ssl_context():
+    """edge-tts verifies TLS against certifi only. Behind a proxy that re-terminates TLS
+    (corporate networks, cloud sandboxes) the CA comes from SSL_CERT_FILE / REQUESTS_CA_BUNDLE;
+    trust those as well, so edge-tts works wherever curl and pip do."""
+    import ssl
+    import certifi
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    for var in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        f = os.environ.get(var)
+        if f and os.path.isfile(f):
+            ctx.load_verify_locations(cafile=f)
+    return ctx
+
+
 def tts_edge(text, voice, out):
     """Write audio and return sentence cues [{t, d, text}] from the same stream."""
     import edge_tts
+    import edge_tts.communicate
+    edge_tts.communicate._SSL_CTX = edge_ssl_context()   # module-level context used by stream()
 
     async def run():
         cues = []
@@ -275,6 +291,30 @@ def default_voice(engine, text):
     return None
 
 
+def edge_voice_fits(voice, text):
+    """False when an edge voice is plainly the wrong language for the text (an en-US voice on
+    Chinese narration, a zh-CN voice on English). Multilingual voices fit everything."""
+    if not voice or "Multilingual" in voice:
+        return True
+    lang = voice.split("-")[0].lower()
+    return lang in ("zh", "ja", "ko") if has_cjk(text) else lang not in ("zh", "ja", "ko")
+
+
+def pick_voice(engine, scene, script, cli_voice):
+    """(voice, note). Order: the scene's own "voice" > --voice > script.json "voice" (edge only,
+    and only when its language fits the narration) > a default for the narration's language."""
+    text = scene.get("narration", "")
+    if scene.get("voice"):
+        return scene["voice"], None
+    if cli_voice:
+        return cli_voice, None
+    sv = script.get("voice") if engine == "edge" else None
+    if sv and not edge_voice_fits(sv, text):
+        dv = default_voice(engine, text)
+        return dv, f"script voice {sv} does not speak this language; using {dv} (set \"voice\" on the scene to choose)"
+    return sv or default_voice(engine, text), None
+
+
 def tts_error(engine, e):
     name = type(e).__name__
     msg = str(e).strip().splitlines()[-1] if str(e).strip() else ""
@@ -286,26 +326,37 @@ def tts_error(engine, e):
     return "\n".join(lines)
 
 
-def cue_diff(old, new):
-    """One line per scene describing what changed between two cues.json dicts."""
+def cue_diff(old, new, old_durs=None, new_durs=None):
+    """One line per scene describing what changed between two cues.json dicts (and, when given,
+    two durations.json dicts: a scene that got longer or shorter needs a re-render even when
+    every sentence still starts at the same time, because self.finish() holds to the old end)."""
+    old_durs, new_durs = old_durs or {}, new_durs or {}
     out = []
     for sid, cues in new.items():
         prev = old.get(sid)
         if prev is None:
             out.append(f"  {sid}: new")
-        elif prev == cues:
+            continue
+        d0, d1 = old_durs.get(sid), new_durs.get(sid)
+        length = (f"; scene length {d0:.2f}s -> {d1:.2f}s" if d0 is not None and d1 is not None
+                  and abs(d0 - d1) > 0.15 else "")
+        if prev == cues and not length:
             out.append(f"  {sid}: unchanged")
         elif len(prev) != len(cues):
             out.append(f"  {sid}: sentence count {len(prev)} -> {len(cues)}: re-check every cue(i) index and the storyboard")
         else:
             shifted = [i for i, (p, c) in enumerate(zip(prev, cues)) if abs(p["t"] - c["t"]) > 0.15]
             texts = [i for i, (p, c) in enumerate(zip(prev, cues)) if p["text"] != c["text"]]
+            what = f"wording changed in sentence(s) {texts}" if texts else "same wording"
             if shifted:
-                out.append(f"  {sid}: timing moved from sentence {shifted[0]} on ({len(shifted)} cues) -> re-render this scene")
+                out.append(f"  {sid}: {what}; timing moved from sentence {shifted[0]} on "
+                           f"({len(shifted)} cues){length} -> re-render this scene")
+            elif length:
+                out.append(f"  {sid}: {what}; cue starts within 0.15 s{length} -> re-render this scene")
             elif texts:
-                out.append(f"  {sid}: wording changed in sentence(s) {texts}, timings within 0.15 s -> re-render optional")
+                out.append(f"  {sid}: {what}, timings within 0.15 s -> re-render optional")
             else:
-                out.append(f"  {sid}: tiny timing drift only")
+                out.append(f"  {sid}: tiny timing drift only -> re-render optional")
     return out
 
 
@@ -338,20 +389,22 @@ def cmd_tts(a):
     for s in script["scenes"]:
         sid = s["id"]
         text = s.get("narration", "")
-        voice = a.voice or (script.get("voice") if a.engine == "edge" else None) or default_voice(a.engine, text)
+        voice, note = pick_voice(a.engine, s, script, a.voice)
         key = sha(a.engine, voice, text, s.get("duration", ""))
         mp3 = out_dir / f"{sid}.mp3"
         fresh = mp3.exists() and cache.get(sid) == key and sid in old_cues and sid in old_durs
         if sid in wanted and (a.force or not fresh):
-            todo.append((s, voice, key, mp3))
+            todo.append((s, voice, key, mp3, note))
         elif sid not in old_cues or sid not in old_durs or not mp3.exists():
-            todo.append((s, voice, key, mp3))   # never leave a scene without audio
+            todo.append((s, voice, key, mp3, note))   # never leave a scene without audio
     if not todo:
         print("tts: nothing to do (all narration unchanged; --force to redo)")
     elif sends:
         print(f"tts: sending the narration of {len(todo)} scene(s) to {sends}")
-    for s, voice, key, mp3 in todo:
+    for s, voice, key, mp3, note in todo:
         sid, text = s["id"], s.get("narration", "")
+        if note and text.strip():
+            print(f"{sid}: {note}")
         try:
             if not text.strip():
                 secs = float(s.get("duration", 5))
@@ -382,7 +435,7 @@ def cmd_tts(a):
     dump_json(cache_path, {k: v for k, v in cache.items() if k in order})
     if old_cues and todo:
         print("changes vs the previous cues.json:")
-        print("\n".join(cue_diff(old_cues, cues)))
+        print("\n".join(cue_diff(old_cues, cues, old_durs, durs)))
     print(f"total narration {sum(durs.values()):.1f}s -> {out_dir}/durations.json, cues.json")
 
 
@@ -407,17 +460,23 @@ def hashes_path(media, scene_file, quality):
     return Path(media) / "videos" / Path(scene_file).stem / quality / ".explainer-hashes.json"
 
 
-def record_hashes(a, script, cues):
-    """Remember, per scene video, the class source and cues it was last used with."""
-    try:
-        srcs = class_sources(a.scenes)
-    except (OSError, SyntaxError):
-        return
-    p = hashes_path(a.media, a.scenes, a.quality)
+def record_hashes(a, script, cues, srcs=None, quality=None, only=None):
+    """Remember, per scene video, the class source and cues it was last used with.
+    `render` passes the sources and cues it rendered from (read before manim started);
+    `assemble` and `review` record any render they see for the first time."""
+    if srcs is None:
+        try:
+            srcs = class_sources(a.scenes)
+        except (OSError, SyntaxError):
+            return
+    quality = quality or a.quality
+    p = hashes_path(a.media, a.scenes, quality)
     rec = load_json(p, {})
     for s in script["scenes"]:
         sid = s["id"]
-        v = Path(a.media) / "videos" / Path(a.scenes).stem / a.quality / f"{sid}.mp4"
+        if only is not None and sid not in only:
+            continue
+        v = Path(a.media) / "videos" / Path(a.scenes).stem / quality / f"{sid}.mp4"
         if not v.exists():
             continue
         mtime = v.stat().st_mtime
@@ -458,7 +517,7 @@ def cmd_stale(a):
     for sid, why in stale:
         print(f"STALE  {sid}: {why}")
     for sid in unknown:
-        print(f"new    {sid}: rendered since the last assemble/review (assumed current)")
+        print(f"new    {sid}: rendered by plain manim since the last render/assemble/review (assumed current)")
     for sid in fresh:
         print(f"ok     {sid}")
     if stale:
@@ -580,18 +639,60 @@ def srt_time(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def wrap_caption(text, latin=42, cjk=20):
+CAPTION_LINE = {"latin": 42, "cjk": 20}   # characters per subtitle line (common broadcast limits)
+
+
+def _line_limit(text):
+    return CAPTION_LINE["cjk"] if has_cjk(text) else CAPTION_LINE["latin"]
+
+
+def wrap_caption(text):
+    """At most two lines, broken where the two lines come out most even (no one-word orphan)."""
     text = " ".join(text.split())
-    limit = cjk if has_cjk(text) else latin
+    limit = _line_limit(text)
     if len(text) <= limit:
         return text
-    if has_cjk(text):
-        cut = text.rfind("，", 0, limit + 1)
-        cut = cut + 1 if cut > limit // 3 else limit
+    if has_cjk(text):   # no spaces: break after punctuation if one is near the middle, else mid-text
+        cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "，、；：,;: "] or [len(text) // 2]
     else:
-        cut = text.rfind(" ", 0, limit + 1)
-        cut = cut if cut > limit // 3 else limit
+        cuts = [i for i, ch in enumerate(text) if ch == " "] or [len(text) // 2]
+    cut = min(cuts, key=lambda c: max(c, len(text) - c))
     return text[:cut].rstrip() + "\n" + text[cut:].lstrip()
+
+
+def caption_chunks(text):
+    """Split a sentence that does not fit two subtitle lines into pieces that do: at clause
+    punctuation first, between words otherwise. Returns the pieces in order."""
+    text = " ".join(text.split())
+    limit = 2 * _line_limit(text)
+    if len(text) <= limit:
+        return [text]
+    if has_cjk(text):
+        units = [u for u in re.split(r"(?<=[，、；：,;:])", text) if u]
+        sep = ""
+    else:
+        units = [u for u in re.split(r"(?<=[,;:])\s+|\s+(?=—)|(?<=—)\s+", text) if u]
+        sep = " "
+    pieces, cur = [], ""
+    for u in units:
+        if len(u) > limit:   # a clause that alone is too long: split it between words
+            for w in (list(u) if has_cjk(u) else u.split()):
+                cand = cur + sep + w if cur else w
+                if len(cand) > limit and cur:
+                    pieces.append(cur)
+                    cur = w
+                else:
+                    cur = cand
+            continue
+        cand = cur + sep + u if cur else u
+        if len(cand) > limit and cur:
+            pieces.append(cur)
+            cur = u
+        else:
+            cur = cand
+    if cur:
+        pieces.append(cur)
+    return pieces
 
 
 def cmd_srt(a):
@@ -616,9 +717,15 @@ def cmd_srt(a):
             end_rel = min(end_rel, length)
             if end_rel - c["t"] < 0.3:
                 end_rel = c["t"] + 0.3
-            n += 1
-            lines += [str(n), f"{srt_time(start + c['t'])} --> {srt_time(start + end_rel - 0.05)}",
-                      wrap_caption(c["text"]), ""]
+            # a long sentence becomes several captions; each gets time in proportion to its length
+            pieces = caption_chunks(c["text"])
+            span, total, t = end_rel - c["t"], sum(len(x) for x in pieces), c["t"]
+            for x in pieces:
+                t_end = t + span * len(x) / total
+                n += 1
+                lines += [str(n), f"{srt_time(start + t)} --> {srt_time(start + t_end - 0.05)}",
+                          wrap_caption(x), ""]
+                t = t_end
         t0 = start + length
     Path(a.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {a.out} ({n} captions); embed with `assemble --subtitles {a.out}` or burn in with --burn-subtitles")
@@ -934,11 +1041,12 @@ def cmd_snapshot(a):
 
 # ---------- check ----------
 
-def net_status(host, timeout=5):
-    """'ok', 'tls' (connection made but the certificate failed: a proxy intercepts TLS), or 'down'."""
+def net_status(host, timeout=5, context=None):
+    """'ok', 'tls' (connection made but the certificate failed: a proxy intercepts TLS), or 'down'.
+    Pass the TLS context the real client uses, so 'ok' means that client will connect too."""
     import ssl
     try:
-        urllib.request.urlopen(f"https://{host}/", timeout=timeout)
+        urllib.request.urlopen(f"https://{host}/", timeout=timeout, context=context)
         return "ok"
     except urllib.error.HTTPError:
         return "ok"            # any HTTP answer means the host and TLS are fine
@@ -981,7 +1089,11 @@ def cmd_check(a):
     except ImportError:
         print("MISSING  edge-tts  -> uv pip install 'edge-tts>=7'")
         ok = False
-    net = net_status(EDGE_HOST)
+    try:
+        edge_ctx = edge_ssl_context()
+    except ImportError:
+        edge_ctx = None
+    net = net_status(EDGE_HOST, context=edge_ctx)
     print({"ok": f"ok   network to {EDGE_HOST} reachable (edge-tts should work)",
            "tls": f"info {EDGE_HOST}: TLS handshake fails (a proxy intercepts HTTPS): edge-tts will fail; use --engine espeak/say",
            "down": f"info {EDGE_HOST} not reachable: edge-tts will fail; use --engine espeak/say or fix the network"}[net])
@@ -1093,10 +1205,10 @@ def cmd_render(a):
     if not manim:
         sys.exit("manim not found: run this with the explainer venv's python, or `bash setup.sh`")
     ids = a.scene_ids or [s["id"] for s in script["scenes"]]
+    quality = "480p15" if a.quality == "l" else f"1080p{a.fps}"
+    srcs = class_sources(a.scenes)                       # what this render is made from
+    cues = load_json(Path(a.audio) / "cues.json", {})
     if a.stale:
-        quality = "480p15" if a.quality == "l" else "1080p30"
-        srcs = class_sources(a.scenes)
-        cues = load_json(Path(a.audio) / "cues.json", {})
         rec = load_json(hashes_path(a.media, a.scenes, quality), {})
         root = Path(a.media) / "videos" / Path(a.scenes).stem / quality
         keep = []
@@ -1138,6 +1250,8 @@ def cmd_render(a):
                 failed.append(sid)
                 tail = [ln for ln in out.splitlines() if ln.strip()][-12:]
                 print("       " + "\n       ".join(tail))
+    done = [sid for sid in ids if sid not in failed]
+    record_hashes(a, script, cues, srcs=srcs, quality=quality, only=set(done))
     print(f"rendered {len(ids) - len(failed)}/{len(ids)} scenes in {time.time() - t0:.0f}s with {a.parallel} worker(s)"
           + (f"; FAILED: {' '.join(failed)}" if failed else ""))
     sys.exit(1 if failed else 0)

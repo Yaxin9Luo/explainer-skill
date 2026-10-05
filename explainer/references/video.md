@@ -19,6 +19,7 @@ Work in a fresh project folder: `$PY $X init explainer-<topic> --title "…"` wr
 - Length: 2–5 minutes unless the user asks otherwise. 5–9 scenes, each 15–60 s of narration.
 - Arc: hook question → minimal setup → the core idea, built in steps → one worked example with real numbers → what goes wrong without the idea → short recap.
 - Spoken language = the user's language. Short sentences (80% STE works well for listeners; Chinese: ≤ 45 characters, one idea each). Say formulas in words ("the ratio of new to old probability"); symbols go on screen, not into the audio.
+- Write what should be *heard*: "for example", "that is", "versus" — not "e.g.", "i.e.", "vs." (edge-tts reads "e.g." letter by letter). Decimals are fine ("0.2" is read "zero point two"); "1e-4" and units are not, so spell them out.
 - Every sentence should name something that can be *shown*. A sentence with nothing to show is usually filler; cut it.
 - Scene ids are Python class names (`Intro`, `RatioDef`) and must be unique. The id links narration, render, and assembly.
 - A scene without narration (a silent animation, an intro card): `"narration": "", "duration": 12`.
@@ -42,12 +43,12 @@ $PY $X voices                                       # list ElevenLabs voice ids 
 
 `tts` is incremental: it re-synthesizes only scenes whose narration (or voice) changed, keeps the rest, and prints what changed against the previous `cues.json` (`--force` redoes everything, `--scenes A B` restricts). `espeak` and `say` synthesize sentence by sentence, so their cues are exact too.
 
-Voices. `script.json`'s `voice` is an edge-tts voice; `--voice` overrides it for any engine.
+Voices. `script.json`'s `voice` is an edge-tts voice; `--voice` overrides it for any engine, and a scene's own `"voice"` overrides both. When the script voice does not speak a scene's language (an `en-US` voice on Chinese narration, or the reverse), `tts` uses the default voice for that language and prints a note, so a bilingual video needs no per-scene setting.
 - English: `en-US-AndrewNeural`, `en-US-BrianNeural`, `en-US-AvaNeural`, `en-GB-RyanNeural`.
 - Chinese: `zh-CN-XiaoxiaoNeural`, `zh-CN-YunxiNeural`, `zh-CN-YunyangNeural` (the default when the narration is Chinese and `voice` is unset). Mixed Chinese/English narration: a multilingual voice such as `en-US-AndrewMultilingualNeural` or `zh-CN-XiaoxiaoMultilingualNeural`.
 - espeak: `en-US`, `en-GB`, `cmn` (Mandarin, the default for Chinese text), `ja`, `de` … (`espeak-ng --voices`).
 
-Output: `audio/<id>.mp3`, `audio/durations.json`, `audio/cues.json`. The command prints each sentence with its index; those indices are what `self.cue(i)` refers to.
+Output: `audio/<id>.mp3`, `audio/durations.json`, `audio/cues.json`. The command prints each sentence with its index; those indices are what `self.cue(i)` refers to. edge-tts splits sentences exactly where `explainer.py` does ("e.g.," and "0.2" do not end a sentence; "。" does), and its cue times sit in the pause before each sentence, 0.1–0.2 s before the first word: a beat on `cue(i)` lands just ahead of the word, which is what "show, then name" wants.
 
 ```
 audio/durations.json   {"Intro": 23.4, "Ratio": 40.8}                         # seconds per scene
@@ -121,7 +122,7 @@ $PY $X render script.json -q l --stale          # only scenes whose source or cu
 $PY $X render script.json -q h                  # final: 1080p30 (run in background)
 ```
 
-`render` runs `manim` once per scene with `-P` workers (default: cores − 1, max 4), prints one line per scene with its `[timed]` warnings, and keeps going when one scene crashes (it lists the failures at the end). Scenes are independent, so the draft takes roughly 1/P of the serial time. Plain `manim -ql scenes.py Intro Ratio` still works; `-a` renders every Scene subclass defined in `scenes.py` (not the imported `Timed`) and stops at the first crash.
+`render` runs `manim` once per scene with `-P` workers (default: cores − 1, max 4), prints one line per scene with its `[timed]` warnings, and keeps going when one scene crashes (it lists the failures at the end). It records which class source and cues each video was rendered from, so `--stale` and `stale` re-render exactly the scenes whose code or narration timing changed since. Scenes are independent, so the draft takes roughly 1/P of the serial time. Plain `manim -ql scenes.py Intro Ratio` still works; `-a` renders every Scene subclass defined in `scenes.py` (not the imported `Timed`) and stops at the first crash.
 
 The folder manim writes into (`1080p30`, `480p15`) must match `--quality` on `assemble` and `review`; they stop and list what exists when it does not, instead of mixing resolutions. `-qh` without `--fps 30` writes `1080p60`.
 
@@ -155,12 +156,13 @@ This builds `review/`: one frame at the end of each sentence (`--mid` adds one m
 
 Give the reviewer only the frames, `index.md`, `script.json`, `storyboard.md`, and `scenes.py` — not your own summary of what is fixed or why it is fine.
 
-**Narration edits during review** (precision fixes are often wording): edit `script.json`, re-run `tts`. It re-synthesizes only the changed scenes and prints, per scene, whether the sentence count changed (re-check every `cue(i)` and the storyboard line), timings moved (re-render that scene), or only wording changed within 0.15 s (re-render optional).
+**Narration edits during review** (precision fixes are often wording): edit `script.json`, re-run `tts`. It re-synthesizes only the changed scenes and prints, per scene, whether the sentence count changed (re-check every `cue(i)` and the storyboard line), timings or the scene length moved by more than 0.15 s (re-render that scene: `self.finish()` holds to the old end otherwise), or only wording changed (re-render optional).
 
 ## 7. Hand over
 
 ```
-$PY $X srt script.json                                   # final.srt from the cues (sentence-level captions)
+$PY $X srt script.json                                   # final.srt from the cues: one caption per sentence, ≤ 2 lines;
+                                                         # a sentence too long for 2 lines is split at commas into several
 $PY $X assemble script.json --quality 1080p30 --subtitles final.srt      # soft subtitle track, no re-encode
 $PY $X gif final.mp4 --start 92 --length 8 --width 800   # preview.gif of the most visual 8 s, for a README
 ```
@@ -180,7 +182,7 @@ Deliver the whole project folder — `final.mp4`, `final.srt`, `preview.gif`, `s
 - `setup.sh` fails building `manimpango` on Linux → it has no Linux wheel on PyPI and needs the headers: `sudo apt-get install pkg-config libcairo2-dev libpango1.0-dev`, then re-run `setup.sh`.
 - `FileNotFoundError: 'dvisvgm'` on any `MathTex` → Homebrew's `texlive` does not ship it: `brew install dvisvgm` (Linux: `apt-get install dvisvgm`). Afterwards check that `ffmpeg -version` still runs: brew upgrades shared libraries and can break an older ffmpeg (fix: `brew upgrade ffmpeg`).
 - `pycairo` build fails on install → `brew install pkgconf cairo pango` (macOS) or `apt install libcairo2-dev libpango1.0-dev pkg-config` (Linux), then reinstall.
-- `tts (edge) failed: … Cannot connect to host speech.platform.bing.com` → no network, or a proxy intercepting TLS (`check` tells which). Retry later, or `--engine espeak` (Linux/macOS) / `--engine say` (macOS). There is no offline edge-tts.
+- `tts (edge) failed: … Cannot connect to host speech.platform.bing.com` → no network, or a proxy intercepting TLS (`check` tells which). Behind a TLS-intercepting proxy, `tts` trusts the CA file named by `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` in addition to edge-tts's own bundle, so set one of those. Otherwise retry later, or `--engine espeak` (Linux/macOS) / `--engine say` (macOS). There is no offline edge-tts.
 - `cue(3) but the narration has 3 sentence(s)` → the narration was edited or the TTS split sentences differently than you counted; use the indices `tts` printed.
 - Chinese text renders as boxes → no CJK font: `sudo apt-get install fonts-noto-cjk` (Linux); then `check` lists it.
 - LaTeX error in a `MathTex` → the log names the .tex file; usually a missing `\` or an unbalanced brace. Manim 0.21's default template loads only `babel`, `amsmath`, `amssymb`; `\usepackage` anything else through a `TexTemplate`.
