@@ -2,14 +2,14 @@
 
 The reviewer gets `review/index.md`, the contact sheets it lists, `script.json`, and `scenes.py`. The reviewer did not build the video. Its job is to judge whether the video *explains*, not just whether it renders.
 
-How to review: go scene by scene. Sheets are 3×2 grids; black cells are empty, not dead stretches. Frames named `<Scene>_<i>m.png` are mid-sentence: use them to check that a highlight or object appears while its sentence is spoken, not after. Judge only what the frames show, not what the builder says was fixed. Read the sentences in `index.md`, look at the matching frames on the sheet, and zoom into single frames (`<Scene>_<i>.png`) when something looks off.
+How to review: go scene by scene. Without `--mid`, sheets are 3×2 grids read left-to-right, top-to-bottom; with `--mid` (the default in the pipeline) each sheet is 2 columns × 3 rows, one sentence per row, left = mid-sentence, right = end of sentence. Black cells are empty, not dead stretches. Mid-sentence frames (`<Scene>_<i>m.png`) show whether a highlight or object appears while its sentence is spoken, not after; a mid frame identical to its end frame means nothing moved in the second half of that sentence. Judge only what the frames show, not what the builder says was fixed. Read the sentences in `index.md`, look at the matching frames on the sheet, and zoom into single frames (`<Scene>_<i>.png`) when something looks off.
 
 ## Per sentence
 
 1. **Is what the sentence talks about on screen?** If the narration says "the ratio", the ratio must be visible and, when it first appears, highlighted. A sentence whose subject is not visible is a *major* issue.
 2. **Does the screen change when the idea changes?** Three or more sentences in a row over an unchanged frame is a dead stretch (*major*), unless it is a deliberate pause after a key reveal.
 3. **Defects** (*blocker*): overlapping text or shapes, anything cut off at the frame edge, unreadably small text, LaTeX rendered wrong, a label attached to the wrong object, two captions on top of each other.
-4. **Correctness** (*blocker*): every formula, number, sign, axis, and curve shape must be right. Check plotted shapes against the math (e.g. where a function is flat, which side is clipped).
+4. **Correctness** (*blocker*): every formula, number, sign, axis, and curve shape must be right. Recompute the numbers of the worked example; check plotted shapes against the math (e.g. where a function is flat, which side is clipped); check that the narration's claim matches what the picture shows (a sentence that is technically wrong is a blocker even if the picture is fine).
 
 ## Per scene
 
