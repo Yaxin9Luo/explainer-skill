@@ -10,6 +10,15 @@ ROOT="$(cd "$HERE/.." && pwd)"
 RES="$HERE/quality/results"; mkdir -p "$RES"
 export TURNS HERE ROOT RES
 
+# Preflight: a skill can be "invoked" in claude -p and still deliver no text (seen with an
+# `allowed-tools` frontmatter line), and then every score below measures the bare model.
+probe=$(cd "$(mktemp -d)" && timeout 300 claude -p "Use the Skill tool to load the explainer skill. Then reply with only the title of its section 4, copied from the skill text. If you received no skill text, reply NO-SKILL-TEXT." --max-turns 4 < /dev/null 2>/dev/null)
+if ! printf '%s' "$probe" | grep -qi "narrated explainer video"; then
+  echo "preflight: the explainer skill did not deliver its text to a claude -p session (got: ${probe:0:200})" >&2
+  echo "scores would measure the bare model; fix the install (~/.claude/skills/explainer) first" >&2
+  exit 2
+fi
+
 one() {
   local line="$1" id prompt expects work
   id=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["id"])' "$line")

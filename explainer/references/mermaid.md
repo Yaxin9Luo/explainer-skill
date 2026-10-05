@@ -20,7 +20,7 @@ Use Mermaid when the diagram will live in Markdown that renders it — GitHub an
 - **One reading direction**, ≤ 12 nodes. More → an overview diagram and one zoom-in.
 - **Group with `subgraph`** when parts belong together (`subgraph Training`, `subgraph Sampling`).
 - **Labels**: ≤ 6 words (≈ 12 characters for Chinese). Quote any label that contains `()`, `[]`, `{}`, `|`, `:` or `;` — `A["clip(r, 1-ε, 1+ε)"]` — or the parser breaks on the brackets.
-- **No math typesetting.** Use Unicode for short symbols (`x₀`, `v_θ`, `∇`, `≤`) and put real formulas in the text under the diagram. GitHub does not render LaTeX inside Mermaid labels.
+- **No formulas in labels — not even short ones.** A node or edge label names a thing (`x₀ (noise)`, `v_θ network`, `loss`); it never holds an expression with an operator (`=`, `+`, `−`, `·`, `‖ ‖`, `←`, a fraction). Mermaid cannot typeset math, GitHub does not render LaTeX inside Mermaid labels, and a formula squeezed into a box is unreadable. Single symbols in Unicode are fine (`x₀`, `v_θ`, `∇`, `≤`). Put every formula in a short numbered list directly under the diagram, and refer to it from the label if needed (`loss (1)`).
 - **Meaning in shape and style, not just color.** Themes differ per site, and colors can be overridden, so encode with node shapes (`[ ]` process, `( )` data, `{ }` decision, `[( )]` store), arrow styles (`-->` flow, `-.->` optional / no gradient, `==>` the main path), and words. If you add `style`/`classDef` colors, never let red vs green carry a distinction alone.
 - **Sequence diagrams**: `activate`/`deactivate` for the lifetime of a call; `alt`/`else` for the two outcomes; `Note over` for the one line that explains the failure.
 - **State diagrams**: `[*] --> Idle`; name transitions after their trigger (`Idle --> Running : start()`).
@@ -29,7 +29,7 @@ Use Mermaid when the diagram will live in Markdown that renders it — GitHub an
 
 `snapshot` cannot render Mermaid, so the check is by reading:
 1. Every node name in the text is in the diagram and spelled the same way.
-2. No label with unquoted brackets or a `;`.
+2. No label with unquoted brackets or a `;`, and no label with a formula (an `=`, `+`, `−`, `·`, `‖`, `←`): those go in the numbered list under the diagram.
 3. Node count ≤ 12 and one direction.
 4. The diagram says one thing the paragraph above it could not say as fast.
 
@@ -37,19 +37,23 @@ Tell the user it was not rendered here and to glance at the preview; if it fails
 
 ## Example
 
+Labels name the parts; the formulas they stand for are listed under the diagram.
+
 ```mermaid
 flowchart LR
-  subgraph Training["Training (one network call)"]
-    x0["x₀ ~ N(0, I)"] --> xt["x_t = (1−t)·x₀ + t·x₁"]
-    x1["x₁ ~ data"] --> xt
-    xt --> v["v_θ(x_t, t)"]
-    v -- "‖v_θ − (x₁ − x₀)‖²" --> L["loss"]
+  subgraph Training["Training: one network call per step"]
+    x0["x₀ (noise)"] --> xt["x_t (point on the line) (1)"]
+    x1["x₁ (data)"] --> xt
+    xt --> v["v_θ network"]
+    v -- "prediction" --> L["squared error vs target (2)"]
   end
-  subgraph Sampling["Sampling (N network calls)"]
-    z["x₀ ~ N(0, I)"] --> e["Euler step\nx ← x + h·v_θ(x, t)"] --> e
+  subgraph Sampling["Sampling: N network calls"]
+    z["x₀ (noise)"] --> e["Euler step (3)"] --> e
     e --> out["x₁: a sample"]
   end
   v -. "same weights" .-> e
 ```
 
-Formula under it, in the text: $x_t = (1-t)x_0 + t x_1$, target $x_1 - x_0$.
+1. $x_t = (1-t)\,x_0 + t\,x_1$, with $t=0$ noise and $t=1$ data.
+2. $\mathcal L = \lVert v_\theta(x_t, t) - (x_1 - x_0)\rVert^2$
+3. $x \leftarrow x + h\,v_\theta(x, t)$, from $t=0$ to $t=1$.
