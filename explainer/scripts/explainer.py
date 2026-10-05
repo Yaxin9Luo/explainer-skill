@@ -4,6 +4,8 @@
 Run with the explainer venv:  ~/.venvs/explainer/bin/python explainer.py <cmd> ...
 
   check     verify ffmpeg, LaTeX, dvisvgm, manim, TTS engines, Chrome, CJK fonts, network
+  init      create a video project folder (templates + manim.cfg with a shared LaTeX cache)
+  render    render scenes in parallel (one manim process each), summarize [timed] warnings
   tts       script.json -> audio/<id>.mp3 + audio/durations.json + audio/cues.json
             (only scenes whose narration changed; --scenes / --force to control)
   stale     list scenes whose class source or cues changed since their video was assembled
@@ -757,7 +759,19 @@ def cmd_lint(a):
             flagged.append((n, unit, x))
     for n, unit, x in flagged:
         print(f"[{n} {unit}] {x}")
-    print(f"{len(sentences)} sentences, {len(flagged)} over the limit ({a.max} words / {a.max_cjk} CJK chars)")
+    style = []
+    cjk_latin = re.compile(r"(?:[\u3400-\u9fff][A-Za-z0-9]|[A-Za-z0-9][\u3400-\u9fff])")
+    for x in sentences:
+        if CJK.search(x):
+            hits = cjk_latin.findall(x)
+            if hits:
+                style.append(f"[spacing] no space between Chinese and Latin/digits ({', '.join(repr(h) for h in hits[:3])}): {x[:60]}")
+            if re.search(r"[\u3400-\u9fff][,;:?!]", x):
+                style.append(f"[punctuation] half-width , ; : ? ! after a Chinese character (use ，；：？！): {x[:60]}")
+    for line in style:
+        print(line)
+    print(f"{len(sentences)} sentences, {len(flagged)} over the limit ({a.max} words / {a.max_cjk} CJK chars)"
+          + (f", {len(style)} style note(s)" if style else ""))
     sys.exit(1 if flagged and a.strict else 0)
 
 
@@ -870,6 +884,7 @@ def cmd_snapshot(a):
     schemes = ["light", "dark"] if a.scheme == "both" else [a.scheme]
     if not shutil.which("ffmpeg"):
         sys.exit("ffmpeg is needed to crop snapshots: " + install_hint("ffmpeg"))
+    shots = []
     for scheme in schemes:
         if a.out:
             o = Path(a.out)
@@ -902,6 +917,17 @@ def cmd_snapshot(a):
             str(out) + ".tmp.png"])
         os.replace(str(out) + ".tmp.png", out)
         print(out)
+        shots.append(out)
+    if a.sheet and len(shots) > 1:   # one image to look at instead of several (fewer image tokens)
+        sheet = (Path(a.out) if a.out else src).with_suffix("")
+        sheet = sheet.with_name(f"{sheet.name}.sheet.png")
+        cmd = ["ffmpeg", "-y", "-v", "error"]
+        for p_ in shots:
+            cmd += ["-i", str(p_)]
+        n = len(shots)
+        filt = "".join(f"[{i}:v]pad=iw+24:ih:0:0:#808080[p{i}];" for i in range(n)) + "".join(f"[p{i}]" for i in range(n)) + f"hstack=inputs={n}"
+        sh(cmd + ["-filter_complex", filt, str(sheet)])
+        print(sheet)
     if src.suffix in (".html", ".htm") and "katex" in src.read_text(errors="ignore").lower():
         print("note: the page loads KaTeX from a CDN; if a shot shows raw \\(...\\), KaTeX did not load (offline?)")
 
@@ -1007,9 +1033,137 @@ def cmd_gif(a):
     print(f"wrote {out} ({size:.1f} MB, {a.length:.0f}s @ {a.fps} fps, {a.width}px wide){hint}")
 
 
+# ---------- init / render ----------
+
+TEX_CACHE = Path(os.environ.get("EXPLAINER_TEX_CACHE", os.path.expanduser("~/.cache/explainer/Tex")))
+
+SCENES_TEMPLATE = '''import os, sys
+sys.path.insert(0, os.environ.get("EXPLAINER_SCRIPTS", "{scripts}"))
+from timed import Timed
+from manim import *
+
+# Color legend (one meaning each; keep in sync with storyboard.md). Never red vs green alone.
+DATA, PARAM, ACCENT, MUTED = "#6fa0ff", "#f0a050", "#f0c050", "#8a8f98"
+
+
+class Intro(Timed):
+    def construct(self):
+        title = Text("{title}", font_size=40).to_edge(UP)
+        self.cue(0); self.play(Write(title), run_time=1.5)
+        # self.cue(1); ...
+        self.finish()
+'''
+
+
+def cmd_init(a):
+    """Create a project folder: script.json, storyboard.md, scenes.py, manim.cfg (shared LaTeX cache)."""
+    d = Path(a.folder)
+    d.mkdir(parents=True, exist_ok=True)
+    scripts = str(Path(__file__).resolve().parent)
+    title = a.title or d.name.replace("-", " ").replace("_", " ")
+    files = {
+        "script.json": json.dumps({"title": title, "voice": "en-US-AndrewNeural",
+                                   "scenes": [{"id": "Intro", "narration": "Replace me with the first scene's narration."}]},
+                                  indent=1, ensure_ascii=False) + "\n",
+        "storyboard.md": f"# Storyboard — {title}\n\n## Color legend\n- DATA (blue) = …\n- PARAM (orange) = …\n\n## Intro (… s)\n[0]  0.0  \"…\"   what is on screen after this sentence; what moves\n",
+        "scenes.py": SCENES_TEMPLATE.format(scripts=scripts, title=title.replace('"', "'")),
+        "manim.cfg": f"[CLI]\nmedia_dir = ./media\ntex_dir = {TEX_CACHE}\n",
+    }
+    for name, body in files.items():
+        f = d / name
+        if f.exists() and not a.force:
+            print(f"keep   {f}")
+            continue
+        f.write_text(body)
+        print(f"wrote  {f}")
+    TEX_CACHE.mkdir(parents=True, exist_ok=True)
+    print(f"LaTeX renders are cached across projects in {TEX_CACHE} (manim.cfg: tex_dir)")
+    print(f"next: edit script.json, then `explainer.py tts script.json` from {d}/")
+
+
+def manim_bin():
+    b = Path(sys.executable).parent / "manim"
+    return str(b) if b.exists() else shutil.which("manim")
+
+
+def cmd_render(a):
+    """Render scenes in parallel (one manim process per scene) and summarize [timed] warnings."""
+    script = load_script(a.script)
+    manim = manim_bin()
+    if not manim:
+        sys.exit("manim not found: run this with the explainer venv's python, or `bash setup.sh`")
+    ids = a.scene_ids or [s["id"] for s in script["scenes"]]
+    if a.stale:
+        quality = "480p15" if a.quality == "l" else "1080p30"
+        srcs = class_sources(a.scenes)
+        cues = load_json(Path(a.audio) / "cues.json", {})
+        rec = load_json(hashes_path(a.media, a.scenes, quality), {})
+        root = Path(a.media) / "videos" / Path(a.scenes).stem / quality
+        keep = []
+        for sid in ids:
+            v = root / f"{sid}.mp4"
+            r = rec.get(sid)
+            if not v.exists() or not r or r.get("mtime") != v.stat().st_mtime \
+               or r.get("src") != srcs.get(sid) or r.get("cues") != sha(json.dumps(cues.get(sid))):
+                keep.append(sid)
+        if not keep:
+            print("render: nothing is stale"); return
+        print(f"render: stale scenes: {' '.join(keep)}")
+        ids = keep
+    flags = ["-q" + a.quality, "--progress_bar", "none", "--media_dir", a.media]
+    if a.quality == "h":
+        flags += ["--fps", str(a.fps)]
+    if not (Path(a.scenes).parent / "manim.cfg").exists() and not Path("manim.cfg").exists():
+        TEX_CACHE.mkdir(parents=True, exist_ok=True)
+        flags += ["--tex_dir", str(TEX_CACHE)] if "--tex_dir" in subprocess.run([manim, "render", "--help"], capture_output=True, text=True).stdout else []
+    import concurrent.futures as cf
+    import time
+    t0 = time.time()
+
+    def run(sid):
+        t = time.time()
+        r = subprocess.run([manim, "render", *flags, a.scenes, sid], capture_output=True, text=True)
+        out = r.stdout + r.stderr
+        timed = [ln.strip() for ln in out.splitlines() if ln.strip().startswith("[timed]")]
+        return sid, r.returncode, time.time() - t, timed, out
+
+    failed = []
+    with cf.ThreadPoolExecutor(max_workers=max(1, a.parallel)) as ex:
+        for sid, rc, dt, timed, out in ex.map(run, ids):
+            status = "ok  " if rc == 0 else "FAIL"
+            print(f"{status} {sid}  {dt:5.1f}s")
+            for ln in timed:
+                print(f"       {ln}")
+            if rc != 0:
+                failed.append(sid)
+                tail = [ln for ln in out.splitlines() if ln.strip()][-12:]
+                print("       " + "\n       ".join(tail))
+    print(f"rendered {len(ids) - len(failed)}/{len(ids)} scenes in {time.time() - t0:.0f}s with {a.parallel} worker(s)"
+          + (f"; FAILED: {' '.join(failed)}" if failed else ""))
+    sys.exit(1 if failed else 0)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    ini = sub.add_parser("init", help="create a video project folder (script.json, storyboard.md, scenes.py, manim.cfg)")
+    ini.add_argument("folder")
+    ini.add_argument("--title")
+    ini.add_argument("--force", action="store_true", help="overwrite existing files")
+    ini.set_defaults(fn=cmd_init)
+
+    rd = sub.add_parser("render", help="render scenes in parallel with manim; -q l (480p15 draft) or -q h (1080p30)")
+    rd.add_argument("script")
+    rd.add_argument("--scenes", nargs="*", metavar="ID", help="only these scene ids")
+    rd.add_argument("--scene-file", default="scenes.py", dest="scenes_file")
+    rd.add_argument("-q", "--quality", choices=["l", "h"], default="l")
+    rd.add_argument("--fps", type=int, default=30, help="for -q h (1080p30)")
+    rd.add_argument("-P", "--parallel", type=int, default=max(1, min(4, (os.cpu_count() or 2) - 1)))
+    rd.add_argument("--stale", action="store_true", help="only scenes that `stale` would list")
+    rd.add_argument("--media", default="media")
+    rd.add_argument("--audio", default="audio")
+    rd.set_defaults(fn=cmd_render)
 
     t = sub.add_parser("tts", help="narration -> audio + per-sentence cues (incremental)")
     t.add_argument("script")
@@ -1097,6 +1251,7 @@ def main():
     n.add_argument("--wait-ms", type=int, default=2000, help="let scripts/animations settle")
     n.add_argument("--scale", type=float, default=1.0, help="device scale factor (2 for a retina-sharp PNG)")
     n.add_argument("--transparent", action="store_true", help="transparent background (for PNG export)")
+    n.add_argument("--sheet", action="store_true", help="also write one side-by-side PNG of all shots (light | dark)")
     n.add_argument("--out")
     n.set_defaults(fn=cmd_snapshot)
 
@@ -1111,7 +1266,7 @@ def main():
     if a.cmd == "snapshot":
         a.size_given = bool(a.size)
         a.size = a.size or "1400x900"
-    if a.cmd == "review":
+    if a.cmd in ("review", "render"):
         # `--scenes` means scene ids here; the Manim file is --scene-file. Keep the attribute
         # name used by find_video/record_hashes.
         a.scene_ids, a.scenes = a.scenes, a.scenes_file

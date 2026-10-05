@@ -7,3 +7,4 @@ media/
 Screenshot*.png
 TWEET.md
 evals/results.jsonl
+evals/quality/results/

@@ -133,11 +133,11 @@ Then just ask Claude Code to explain something. Ask for a video explicitly; the 
 ## How the video pipeline works
 
 ```
-script.json ──tts──▶ audio/*.mp3 + cues.json (sentence start times; only changed scenes re-synthesized)
-     │                         │
-     ▼                         ▼
-storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a beat on sentence i, self.finish() holds)
-                               │ render 480p draft          ◀── stale: which scenes to re-render
+init ──▶ script.json ──tts──▶ audio/*.mp3 + cues.json (sentence start times; only changed scenes re-synthesized)
+              │                         │
+              ▼                         ▼
+       storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a beat on sentence i, self.finish() holds)
+                                        │ render -q l: parallel 480p draft, shared LaTeX cache   ◀── --stale
                                ▼
                    assemble (pad each scene so audio = video; cached parts) ──▶ final.mp4
                                │
@@ -152,6 +152,8 @@ storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a bea
 | command | what it does |
 |---|---|
 | `check` | verify ffmpeg, LaTeX, dvisvgm, manim, edge-tts, Chrome, CJK fonts, offline TTS, and whether the TTS host is reachable |
+| `init` | create a project folder: `script.json`, `storyboard.md`, `scenes.py` templates and a `manim.cfg` whose LaTeX cache is shared across projects |
+| `render` | render scenes in parallel (one manim process per scene), print each scene's `[timed]` warnings, keep going past a crash; `--stale` renders only what changed |
 | `tts` | narration → audio + per-sentence cues; engines: edge-tts (online), espeak-ng (offline), macOS `say`, ElevenLabs. Incremental: only changed scenes, with a diff of the cues. Chinese narration picks a zh-CN voice. Empty narration + `duration` = a silent scene |
 | `stale` | list scenes whose class source or cues changed since their video was last assembled/reviewed, with the `manim` command to re-render them |
 | `assemble` | mux each scene with its audio (freeze last frame / pad silence), concatenate; unchanged parts are reused; `--subtitles` adds a soft track, `--burn-subtitles` hard-codes it |
@@ -159,9 +161,9 @@ storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a bea
 | `review` | one frame per sentence (`--mid`: plus mid-sentence, laid out one sentence per row), contact sheets, frame↔sentence index; `--scenes` rebuilds only some |
 | `frames` | evenly spaced stills from any video |
 | `gif` | palette-optimized GIF preview of a few seconds, for READMEs |
-| `lint` | flag sentences over the STE length limit in a Markdown answer (Chinese/Japanese counted in characters; "e.g." does not end a sentence) |
+| `lint` | flag sentences over the STE length limit in a Markdown answer (Chinese/Japanese counted in characters; "e.g." does not end a sentence); style notes for missing CJK/Latin spacing and half-width punctuation |
 | `math` | LaTeX → SVG sized in px, with `currentColor` and collision-free ids, ready to paste into a diagram |
-| `snapshot` | headless-Chrome screenshots of an SVG/HTML page, light + dark, exact phone width, `--query` for slider states, `--scale 2` / `--transparent` for exports; finds Playwright/snap Chromium or `CHROME_BIN` |
+| `snapshot` | headless-Chrome screenshots of an SVG/HTML page, light + dark (`--sheet` side by side), exact phone width, `--query` for slider states, `--scale 2` / `--transparent` for exports; finds Playwright/snap Chromium or `CHROME_BIN` |
 | `voices` | list ElevenLabs voices |
 
 ## What I verified, and what I didn't
@@ -172,7 +174,7 @@ storyboard.md  ──────▶  scenes.py (Manim; self.cue(i) starts a bea
 - Accessibility: both example videos use red against green for their central contrast, which red-green color-blind viewers will partly lose. The skill now forbids that pairing; the examples have not been re-rendered. The pipeline now produces sentence-level subtitles (`explainer.py srt`); the example videos predate it and have none.
 - edge-tts is free and sends the narration text to Microsoft's online TTS service; the skill says so before running it when the narration looks non-public, and `--engine espeak` is the offline alternative. ElevenLabs works too if `ELEVENLABS_API_KEY` is set (`explainer.py voices` lists voices); its sentence timestamps landed within 0.08 s of the real pauses at the three boundaries we checked (one scene). It sounds more natural but is not needed for clear explainers.
 - The two example video projects ship `script.json`, `scenes.py`, and (for flow matching) the storyboard, but not the generated `audio/` folder; to re-render them run `tts` first. The PPO scenes predate `timed.py`.
-- Trigger accuracy: `evals/triggers.jsonl` holds 26 prompts (English and Chinese, half should trigger); `evals/run_triggers.sh` measures it with `claude -p`.
+- Evals: `evals/run_triggers.sh` measures trigger accuracy on 26 prompts (English and Chinese, half should trigger) with `claude -p`; `evals/run_quality.sh` generates answers for 5 fixed prompts with the skill and grades them with a fresh judge session against `references/review.md`. Both cost model calls; run them after editing `SKILL.md` and compare.
 
 ## License
 
