@@ -15,7 +15,8 @@ export TURNS HERE ROOT RES
 probe=$(cd "$(mktemp -d)" && timeout 300 claude -p "Use the Skill tool to load the explainer skill. Then reply with only the title of its section 4, copied from the skill text. If you received no skill text, reply NO-SKILL-TEXT." --max-turns 4 < /dev/null 2>/dev/null)
 if ! printf '%s' "$probe" | grep -qi "narrated explainer video"; then
   echo "preflight: the explainer skill did not deliver its text to a claude -p session (got: ${probe:0:200})" >&2
-  echo "scores would measure the bare model; fix the install (~/.claude/skills/explainer) first" >&2
+  echo "scores would measure the bare model. Check the install (~/.claude/skills/explainer); if SKILL.md has an" >&2
+  echo "allowed-tools line, some environments load it empty in claude -p: remove it for the run, restore it after" >&2
   exit 2
 fi
 
