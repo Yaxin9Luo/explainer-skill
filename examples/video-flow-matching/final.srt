@@ -1,0 +1,470 @@
+1
+00:00:00,050 --> 00:00:02,300
+How do you turn random noise into data?
+
+2
+00:00:02,350 --> 00:00:05,038
+Flow matching answers
+with a velocity field.
+
+3
+00:00:05,088 --> 00:00:07,750
+A neural network learns,
+at every point and
+
+4
+00:00:07,800 --> 00:00:11,150
+at every time, which way
+to move and how fast.
+
+5
+00:00:11,200 --> 00:00:14,675
+To generate, you start from
+noise and follow the arrows.
+
+6
+00:00:14,725 --> 00:00:15,913
+But there is a puzzle.
+
+7
+00:00:15,963 --> 00:00:19,762
+The network is trained on a target
+that it can never match exactly.
+
+8
+00:00:19,812 --> 00:00:23,212
+Let us see what it really
+learns, and why that works.
+
+9
+00:00:23,466 --> 00:00:26,178
+We use the simplest
+case, in one dimension.
+
+10
+00:00:26,228 --> 00:00:29,704
+Time runs from zero to one
+along the horizontal axis.
+
+11
+00:00:29,754 --> 00:00:34,778
+At time zero we have noise, x zero,
+drawn from a standard Gaussian.
+
+12
+00:00:34,828 --> 00:00:37,116
+At time one we have data, x one.
+
+13
+00:00:37,166 --> 00:00:39,229
+Here the data are just two points,
+
+14
+00:00:39,279 --> 00:00:43,253
+minus two and plus two, each
+with probability one half.
+
+15
+00:00:43,303 --> 00:00:45,916
+Pick one noise sample and one data point,
+
+16
+00:00:45,966 --> 00:00:48,678
+independently, and join
+them with a straight line.
+
+17
+00:00:48,728 --> 00:00:55,203
+At time t, the point on the line is one
+minus t times x zero, plus t times x one.
+
+18
+00:00:55,253 --> 00:00:59,578
+Its velocity is the time
+derivative, x one minus x zero.
+
+19
+00:00:59,628 --> 00:01:04,391
+It is the same at every time, so the
+point moves at a constant speed.
+
+20
+00:01:04,642 --> 00:01:08,217
+Training uses exactly this
+velocity as the target.
+
+21
+00:01:08,267 --> 00:01:11,467
+Sample a time, a noise
+point, and a data point.
+
+22
+00:01:11,517 --> 00:01:13,780
+Form the point x t on their line.
+
+23
+00:01:13,830 --> 00:01:17,367
+The network sees x t
+and t, and must predict
+
+24
+00:01:17,417 --> 00:01:20,679
+x one minus x zero, under a squared error.
+
+25
+00:01:20,729 --> 00:01:23,580
+This is the conditional
+flow matching loss.
+
+26
+00:01:23,630 --> 00:01:25,405
+Now draw many such pairs.
+
+27
+00:01:25,455 --> 00:01:27,392
+The straight lines cross each other.
+
+28
+00:01:27,442 --> 00:01:30,830
+Look at the point x equals
+zero, at time one half.
+
+29
+00:01:30,880 --> 00:01:35,530
+One line passes through it with slope plus
+four, and another with slope minus four.
+
+30
+00:01:35,580 --> 00:01:38,017
+The same input gets two different targets.
+
+31
+00:01:38,067 --> 00:01:40,480
+So the loss can never reach zero.
+
+32
+00:01:40,730 --> 00:01:42,142
+So what does the network learn?
+
+33
+00:01:42,192 --> 00:01:44,393
+For a squared error, the best prediction
+
+34
+00:01:44,443 --> 00:01:47,093
+for an input is the
+average of its targets.
+
+35
+00:01:47,143 --> 00:01:51,318
+Here, the average is over all lines
+that pass through x at time t.
+
+36
+00:01:51,368 --> 00:01:54,630
+We call it the marginal
+velocity, u t of x.
+
+37
+00:01:54,680 --> 00:02:00,880
+It is the conditional expectation of x one
+minus x zero, given that x t equals x.
+
+38
+00:02:00,930 --> 00:02:02,855
+Now expand the loss around it.
+
+39
+00:02:02,905 --> 00:02:06,905
+The first term is the distance from
+the network to the marginal velocity.
+
+40
+00:02:06,955 --> 00:02:09,618
+The second term is the
+variance of the targets,
+
+41
+00:02:09,668 --> 00:02:11,530
+and it does not depend on the network.
+
+42
+00:02:11,580 --> 00:02:15,530
+The cross term is zero, because
+the targets average to u t.
+
+43
+00:02:15,580 --> 00:02:19,367
+So our loss has the same
+gradients as the marginal loss,
+
+44
+00:02:19,417 --> 00:02:21,593
+which in general we cannot compute.
+
+45
+00:02:21,858 --> 00:02:23,595
+Why is u t the field we want?
+
+46
+00:02:23,645 --> 00:02:26,808
+Look at the distribution
+of x t at a few times.
+
+47
+00:02:26,858 --> 00:02:32,270
+It starts as one Gaussian, splits into two
+bumps, and ends on the two data points.
+
+48
+00:02:32,320 --> 00:02:34,820
+All lines that end at the
+same data point carry
+
+49
+00:02:34,870 --> 00:02:38,858
+a conditional distribution,
+p t of x given x one.
+
+50
+00:02:38,908 --> 00:02:42,258
+The marginal velocity averages
+these line velocities,
+
+51
+00:02:42,308 --> 00:02:45,546
+weighted by how likely each
+line is at that point.
+
+52
+00:02:45,596 --> 00:02:49,895
+The continuity equation is linear
+in density times velocity.
+
+53
+00:02:49,945 --> 00:02:52,033
+So this weighted average moves the whole
+
+54
+00:02:52,083 --> 00:02:54,808
+noise distribution into
+the data distribution.
+
+55
+00:02:54,858 --> 00:02:57,608
+Following u t from noise gives data.
+
+56
+00:02:57,874 --> 00:03:01,074
+Let us check this with real
+numbers, at time one half.
+
+57
+00:03:01,124 --> 00:03:06,174
+At x equals zero, the two lines have
+targets plus four and minus four.
+
+58
+00:03:06,224 --> 00:03:11,049
+By symmetry they are equally likely,
+so the marginal velocity is zero.
+
+59
+00:03:11,099 --> 00:03:15,299
+The network learns zero here, a
+value it never saw as a target.
+
+60
+00:03:15,349 --> 00:03:17,624
+Now move to x equals one half.
+
+61
+00:03:17,674 --> 00:03:20,574
+The line toward plus two
+has target plus three.
+
+62
+00:03:20,624 --> 00:03:23,749
+The line toward minus two
+has target minus five.
+
+63
+00:03:23,799 --> 00:03:26,024
+But the posterior weights are not equal.
+
+64
+00:03:26,074 --> 00:03:28,974
+They are about ninety eight
+percent and two percent.
+
+65
+00:03:29,024 --> 00:03:34,249
+So the marginal velocity is about two
+point eight six, pointing toward plus two.
+
+66
+00:03:34,514 --> 00:03:38,151
+Do this at every point, and we
+get the whole marginal field.
+
+67
+00:03:38,201 --> 00:03:44,139
+In closed form, it is the expected data
+point, minus x, divided by one minus t.
+
+68
+00:03:44,189 --> 00:03:46,889
+Now follow the field
+from many noise samples.
+
+69
+00:03:46,939 --> 00:03:50,551
+These marginal paths are
+curved, and they do not cross.
+
+70
+00:03:50,601 --> 00:03:54,489
+Near the middle they hesitate, then
+split toward the two data points.
+
+71
+00:03:54,539 --> 00:03:56,152
+Compare the training lines.
+
+72
+00:03:56,202 --> 00:03:58,414
+Those are straight, but they cross.
+
+73
+00:03:58,464 --> 00:04:02,751
+The marginal flow is a deterministic
+map from noise to data.
+
+74
+00:04:03,018 --> 00:04:05,918
+To generate, draw x
+zero from the Gaussian.
+
+75
+00:04:05,968 --> 00:04:09,580
+Then solve the differential
+equation, d x over d t
+
+76
+00:04:09,630 --> 00:04:14,180
+equals v theta of x and t,
+from time zero to time one.
+
+77
+00:04:14,230 --> 00:04:16,805
+The simplest solver is Euler's method.
+
+78
+00:04:16,855 --> 00:04:22,130
+Take a step of size h along the current
+velocity, then evaluate the network again.
+
+79
+00:04:22,180 --> 00:04:27,493
+Start at x zero equals zero point four,
+with four steps of size one quarter.
+
+80
+00:04:27,543 --> 00:04:31,668
+The positions are zero point
+three, zero point three seven,
+
+81
+00:04:31,718 --> 00:04:34,293
+one point zero nine, and finally two.
+
+82
+00:04:34,343 --> 00:04:37,193
+The sample lands on the
+data point plus two.
+
+83
+00:04:37,450 --> 00:04:39,138
+What if we take only one step?
+
+84
+00:04:39,188 --> 00:04:43,063
+At time zero, x t carries no
+information about the data.
+
+85
+00:04:43,113 --> 00:04:46,838
+So the marginal velocity
+is the data mean minus x.
+
+86
+00:04:46,888 --> 00:04:51,038
+Here the mean is zero, so the
+velocity is minus x zero.
+
+87
+00:04:51,088 --> 00:04:55,375
+One Euler step sends every sample
+to zero, the mean of the data.
+
+88
+00:04:55,425 --> 00:04:57,075
+That is not a data point at all.
+
+89
+00:04:57,125 --> 00:05:00,513
+Straight training lines do not
+give straight marginal paths.
+
+90
+00:05:00,563 --> 00:05:04,050
+This curvature is why the
+sampler needs several steps.
+
+91
+00:05:04,298 --> 00:05:05,161
+To recap.
+
+92
+00:05:05,211 --> 00:05:09,685
+The network learns a velocity
+field, v theta of x and t.
+
+93
+00:05:09,735 --> 00:05:14,048
+It regresses on the per-sample
+target, x one minus x zero,
+
+94
+00:05:14,098 --> 00:05:16,460
+along straight lines from noise to data.
+
+95
+00:05:16,510 --> 00:05:18,573
+The squared error makes its optimum the
+
+96
+00:05:18,623 --> 00:05:21,348
+conditional average,
+the marginal velocity.
+
+97
+00:05:21,398 --> 00:05:25,073
+That field moves the noise
+distribution to the data distribution.
+
+98
+00:05:25,123 --> 00:05:28,486
+The loss stays above zero by
+the variance of the targets.
+
+99
+00:05:28,536 --> 00:05:31,198
+To sample, integrate the
+differential equation
+
+100
+00:05:31,248 --> 00:05:34,436
+from noise at time zero
+to data at time one.
+

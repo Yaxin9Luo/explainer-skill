@@ -27,7 +27,8 @@ Scene ids must match the Manim Scene class names. A scene with empty narration
 gets `duration` seconds of silence and one cue, for animations without a voice-over.
 
 audio/durations.json:  {"<id>": seconds, ...}
-audio/cues.json:       {"<id>": [{"t": start_s, "d": length_s, "text": "sentence"}, ...], ...}
+audio/cues.json:       {"<id>": [{"t": start_s, "d": length_s, "text": "sentence", "w": [[start_s, "word"], ...]}, ...], ...}
+                       ("w" is optional: edge-tts word starts, used only to time split captions)
 Bring your own audio by writing these two files by hand and skipping `tts`.
 """
 import argparse
@@ -154,7 +155,9 @@ def edge_ssl_context():
 
 
 def tts_edge(text, voice, out):
-    """Write audio and return sentence cues [{t, d, text}] from the same stream."""
+    """Write audio and return sentence cues [{t, d, text, w}] from the same stream.
+    edge-tts reports one boundary type per request, so a second request (audio discarded) gives the
+    word start times; `srt` uses them to time captions that split a long sentence."""
     import edge_tts
     import edge_tts.communicate
     edge_tts.communicate._SSL_CTX = edge_ssl_context()   # module-level context used by stream()
@@ -170,9 +173,27 @@ def tts_edge(text, voice, out):
                     cues.append({"t": round(ch["offset"] / 1e7, 3),
                                  "d": round(ch["duration"] / 1e7, 3), "text": ch["text"]})
         write_atomic(tmp, out)
-        return cues
+        words = [(round(ch["offset"] / 1e7, 3), ch["text"])
+                 async for ch in edge_tts.Communicate(text, voice, boundary="WordBoundary").stream()
+                 if ch["type"] == "WordBoundary"]
+        return attach_words(cues, words)
 
     return asyncio.run(run())
+
+
+def attach_words(cues, words):
+    """Give each sentence cue the [start, word] pairs spoken inside it."""
+    for i, c in enumerate(cues):
+        end = cues[i + 1]["t"] if i + 1 < len(cues) else float("inf")
+        c["w"] = [[t, w] for t, w in words if c["t"] - 0.05 <= t < end - 0.05]
+    return cues
+
+
+def cue_sig(scene_cues):
+    """Hash of what a render depends on: sentence times and text (word timings are for captions only)."""
+    if scene_cues is None:
+        return sha("null")
+    return sha(json.dumps([{k: v for k, v in c.items() if k != "w"} for c in scene_cues]))
 
 
 def tts_per_sentence(text, out, synth_one):
@@ -340,7 +361,8 @@ def cue_diff(old, new, old_durs=None, new_durs=None):
         d0, d1 = old_durs.get(sid), new_durs.get(sid)
         length = (f"; scene length {d0:.2f}s -> {d1:.2f}s" if d0 is not None and d1 is not None
                   and abs(d0 - d1) > 0.15 else "")
-        if prev == cues and not length:
+        strip = lambda cs: [{k: v for k, v in c.items() if k != "w"} for c in cs]
+        if strip(prev) == strip(cues) and not length:
             out.append(f"  {sid}: unchanged")
         elif len(prev) != len(cues):
             out.append(f"  {sid}: sentence count {len(prev)} -> {len(cues)}: re-check every cue(i) index and the storyboard")
@@ -483,7 +505,7 @@ def record_hashes(a, script, cues, srcs=None, quality=None, only=None):
         old = rec.get(sid)
         if old and old.get("mtime") == mtime:
             continue   # same render as before: keep the hashes it was recorded with
-        rec[sid] = {"mtime": mtime, "src": srcs.get(sid), "cues": sha(json.dumps(cues.get(sid)))}
+        rec[sid] = {"mtime": mtime, "src": srcs.get(sid), "cues": cue_sig(cues.get(sid))}
     p.parent.mkdir(parents=True, exist_ok=True)
     dump_json(p, rec)
 
@@ -511,7 +533,7 @@ def cmd_stale(a):
         why = []
         if r.get("src") != srcs[sid]:
             why.append("class source changed")
-        if r.get("cues") != sha(json.dumps(cues.get(sid))):
+        if r.get("cues") != cue_sig(cues.get(sid)):
             why.append("cues changed")
         (stale if why else fresh).append((sid, ", ".join(why)) if why else sid)
     for sid, why in stale:
@@ -660,39 +682,70 @@ def wrap_caption(text):
     return text[:cut].rstrip() + "\n" + text[cut:].lstrip()
 
 
+def _fits(text):
+    return all(len(line) <= _line_limit(text) for line in wrap_caption(text).split("\n"))
+
+
 def caption_chunks(text):
-    """Split a sentence that does not fit two subtitle lines into pieces that do: at clause
-    punctuation first, between words otherwise. Returns the pieces in order."""
+    """Split a sentence that does not fit two subtitle lines into the fewest pieces that do, of
+    similar length (no one-word orphan), cutting after clause punctuation when one is close."""
     text = " ".join(text.split())
-    limit = 2 * _line_limit(text)
-    if len(text) <= limit:
+    if _fits(text):
         return [text]
-    if has_cjk(text):
-        units = [u for u in re.split(r"(?<=[，、；：,;:])", text) if u]
-        sep = ""
+    cjk = has_cjk(text)
+    # candidate cut positions (character offsets where a new piece may start)
+    if cjk:
+        cuts = list(range(1, len(text)))
     else:
-        units = [u for u in re.split(r"(?<=[,;:])\s+|\s+(?=—)|(?<=—)\s+", text) if u]
-        sep = " "
-    pieces, cur = [], ""
-    for u in units:
-        if len(u) > limit:   # a clause that alone is too long: split it between words
-            for w in (list(u) if has_cjk(u) else u.split()):
-                cand = cur + sep + w if cur else w
-                if len(cand) > limit and cur:
-                    pieces.append(cur)
-                    cur = w
-                else:
-                    cur = cand
-            continue
-        cand = cur + sep + u if cur else u
-        if len(cand) > limit and cur:
-            pieces.append(cur)
-            cur = u
-        else:
-            cur = cand
-    if cur:
-        pieces.append(cur)
-    return pieces
+        cuts = [m.end() for m in re.finditer(r" ", text)]
+    punct = set(i for i in cuts if text[:i].rstrip()[-1:] in ",;:—，、；：")
+
+    def split(k):
+        pieces, start = [], 0
+        for j in range(1, k):
+            target = start + (len(text) - start) / (k - j + 1)
+            near = [c for c in cuts if start < c < len(text)]
+            if not near:
+                break
+            # nearest cut to the target; a clause cut wins if it is within a quarter piece of it
+            best = min(near, key=lambda c: abs(c - target))
+            clause = [c for c in near if c in punct and abs(c - target) <= (len(text) - start) / (k - j + 1) / 4]
+            if clause:
+                best = min(clause, key=lambda c: abs(c - target))
+            pieces.append(text[start:best].strip())
+            start = best
+        pieces.append(text[start:].strip())
+        return [x for x in pieces if x]
+
+    for k in range(2, 12):
+        pieces = split(k)
+        if all(_fits(x) for x in pieces):
+            return pieces
+    return split(12)
+
+
+def piece_starts(cue, pieces, end_rel):
+    """Start time (scene-relative) of each caption piece of one sentence cue."""
+    text = " ".join(cue["text"].split())
+    offs, pos = [], 0
+    for x in pieces:                    # character offset of each piece in the sentence
+        i = text.find(x, pos)
+        offs.append(max(i, pos))
+        pos = offs[-1] + len(x)
+    words, wpos, pos = cue.get("w") or [], [], 0
+    for t, w in words:                  # character offset of each spoken word
+        i = text.find(w, pos)
+        if i >= 0:
+            wpos.append((i, t))
+            pos = i + len(w)
+    out = [cue["t"]]
+    for k in range(1, len(pieces)):
+        after = [t for i, t in wpos if i >= offs[k]]
+        if after:
+            out.append(max(after[0], out[-1] + 0.3))
+        else:   # no word timings: in proportion to length
+            out.append(cue["t"] + (end_rel - cue["t"]) * offs[k] / max(1, len(text)))
+    return out
 
 
 def cmd_srt(a):
@@ -717,15 +770,15 @@ def cmd_srt(a):
             end_rel = min(end_rel, length)
             if end_rel - c["t"] < 0.3:
                 end_rel = c["t"] + 0.3
-            # a long sentence becomes several captions; each gets time in proportion to its length
+            # a long sentence becomes several captions, each starting when its first word is spoken
+            # (edge-tts word timings), or in proportion to its length when there are none
             pieces = caption_chunks(c["text"])
-            span, total, t = end_rel - c["t"], sum(len(x) for x in pieces), c["t"]
-            for x in pieces:
-                t_end = t + span * len(x) / total
+            times = piece_starts(c, pieces, end_rel)
+            for k, x in enumerate(pieces):
+                t_end = times[k + 1] if k + 1 < len(pieces) else end_rel
                 n += 1
-                lines += [str(n), f"{srt_time(start + t)} --> {srt_time(start + t_end - 0.05)}",
+                lines += [str(n), f"{srt_time(start + times[k])} --> {srt_time(start + t_end - 0.05)}",
                           wrap_caption(x), ""]
-                t = t_end
         t0 = start + length
     Path(a.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {a.out} ({n} captions); embed with `assemble --subtitles {a.out}` or burn in with --burn-subtitles")
@@ -1216,7 +1269,7 @@ def cmd_render(a):
             v = root / f"{sid}.mp4"
             r = rec.get(sid)
             if not v.exists() or not r or r.get("mtime") != v.stat().st_mtime \
-               or r.get("src") != srcs.get(sid) or r.get("cues") != sha(json.dumps(cues.get(sid))):
+               or r.get("src") != srcs.get(sid) or r.get("cues") != cue_sig(cues.get(sid)):
                 keep.append(sid)
         if not keep:
             print("render: nothing is stale"); return
@@ -1225,9 +1278,15 @@ def cmd_render(a):
     flags = ["-q" + a.quality, "--progress_bar", "none", "--media_dir", a.media]
     if a.quality == "h":
         flags += ["--fps", str(a.fps)]
+    help_text = subprocess.run([manim, "render", "--help"], capture_output=True, text=True).stdout
     if not (Path(a.scenes).parent / "manim.cfg").exists() and not Path("manim.cfg").exists():
         TEX_CACHE.mkdir(parents=True, exist_ok=True)
-        flags += ["--tex_dir", str(TEX_CACHE)] if "--tex_dir" in subprocess.run([manim, "render", "--help"], capture_output=True, text=True).stdout else []
+        flags += ["--tex_dir", str(TEX_CACHE)] if "--tex_dir" in help_text else []
+    # After each formula, manim deletes every non-SVG file in tex_dir. With parallel workers (and a
+    # tex_dir shared across projects) that removes another worker's half-built .dvi and its scene
+    # fails with "does not support converting .dvi files to SVG". Keep the files instead.
+    if "--no_latex_cleanup" in help_text:
+        flags.append("--no_latex_cleanup")
     import concurrent.futures as cf
     import time
     t0 = time.time()
@@ -1239,17 +1298,31 @@ def cmd_render(a):
         timed = [ln.strip() for ln in out.splitlines() if ln.strip().startswith("[timed]")]
         return sid, r.returncode, time.time() - t, timed, out
 
+    def report(sid, rc, dt, timed, out):
+        print(f"{'ok  ' if rc == 0 else 'FAIL'} {sid}  {dt:5.1f}s")
+        for ln in timed:
+            print(f"       {ln}")
+        if rc != 0:
+            tail = [ln for ln in out.splitlines() if ln.strip()][-12:]
+            print("       " + "\n       ".join(tail))
+
     failed = []
     with cf.ThreadPoolExecutor(max_workers=max(1, a.parallel)) as ex:
         for sid, rc, dt, timed, out in ex.map(run, ids):
-            status = "ok  " if rc == 0 else "FAIL"
-            print(f"{status} {sid}  {dt:5.1f}s")
-            for ln in timed:
-                print(f"       {ln}")
+            if rc != 0 and a.parallel > 1:
+                failed.append(sid)   # retried alone below: two workers can collide on one LaTeX formula
+                print(f"retry {sid}  (failed in the parallel pass; trying it alone)")
+                continue
+            report(sid, rc, dt, timed, out)
             if rc != 0:
                 failed.append(sid)
-                tail = [ln for ln in out.splitlines() if ln.strip()][-12:]
-                print("       " + "\n       ".join(tail))
+    if a.parallel > 1 and failed:
+        retry, failed = failed, []
+        for sid in retry:
+            sid, rc, dt, timed, out = run(sid)
+            report(sid, rc, dt, timed, out)
+            if rc != 0:
+                failed.append(sid)
     done = [sid for sid in ids if sid not in failed]
     record_hashes(a, script, cues, srcs=srcs, quality=quality, only=set(done))
     print(f"rendered {len(ids) - len(failed)}/{len(ids)} scenes in {time.time() - t0:.0f}s with {a.parallel} worker(s)"

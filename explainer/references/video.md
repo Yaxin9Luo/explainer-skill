@@ -52,10 +52,11 @@ Output: `audio/<id>.mp3`, `audio/durations.json`, `audio/cues.json`. The command
 
 ```
 audio/durations.json   {"Intro": 23.4, "Ratio": 40.8}                         # seconds per scene
-audio/cues.json        {"Intro": [{"t": 0.05, "d": 2.3, "text": "How do you…"}, …]}   # t = start, d = length
+audio/cues.json        {"Intro": [{"t": 0.05, "d": 2.3, "text": "How do you…", "w": [[0.12, "How"], …]}, …]}
+                       # t = start, d = length, w = word starts (edge only; used by `srt`, ignored by `stale`)
 ```
 
-Bringing your own audio (a recorded voice, another TTS): write these two files by hand (times in seconds) and skip `tts`. `timed.py` reads `t`; `review` and `srt` read `t` and `text`.
+Bringing your own audio (a recorded voice, another TTS): write these two files by hand (times in seconds) and skip `tts`. `timed.py` reads `t`; `review` and `srt` read `t` and `text`; `w` is optional.
 
 ## 2. Storyboard (`storyboard.md`) — before any Manim code
 
@@ -161,8 +162,9 @@ Give the reviewer only the frames, `index.md`, `script.json`, `storyboard.md`, a
 ## 7. Hand over
 
 ```
-$PY $X srt script.json                                   # final.srt from the cues: one caption per sentence, ≤ 2 lines;
-                                                         # a sentence too long for 2 lines is split at commas into several
+$PY $X srt script.json                                   # final.srt from the cues: one caption per sentence, ≤ 2 lines of ≤ 42
+                                                         # characters (20 for Chinese); a longer sentence becomes several captions
+                                                         # of similar length, each starting on its first word (edge word timings)
 $PY $X assemble script.json --quality 1080p30 --subtitles final.srt      # soft subtitle track, no re-encode
 $PY $X gif final.mp4 --start 92 --length 8 --width 800   # preview.gif of the most visual 8 s, for a README
 ```

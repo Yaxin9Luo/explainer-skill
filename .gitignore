@@ -8,3 +8,8 @@ Screenshot*.png
 TWEET.md
 evals/results.jsonl
 evals/quality/results/
+
+# example video build outputs (the shipped video is copied to <name>.mp4)
+examples/*/review/
+examples/*/final_parts/
+examples/*/final.mp4
