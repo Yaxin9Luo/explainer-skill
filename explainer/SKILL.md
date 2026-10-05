@@ -1,6 +1,7 @@
 ---
 name: explainer
 description: Load this before answering any question about how or why something works — a mechanism, algorithm, concept, paper, system, codebase, bug, or result — even a one-sentence "why does X do Y?": it decides whether the answer needs a diagram, a table, an interactive page, or structured text, and builds it. Produces controlled-English text (ASD-STE100), Mermaid or SVG diagrams with typeset math, comparison tables, interactive HTML pages, and narrated 3Blue1Brown-style videos (Manim + TTS), in English or Chinese. Also use it for "explain / teach / walk me through / ELI5 / help me understand", for "make me a diagram / page / animation / explainer video", for STE100 / Simplified Technical English / "controlled English", when the user says they still don't get a previous explanation, and for the Chinese equivalents — 解释一下、讲讲、为什么、怎么工作的、原理、画个图、做个页面、做个视频、还是没懂、说人话、给新手讲. Skip it for one-line factual lookups and for narrating a code change you are making.
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Bash(bash ${CLAUDE_SKILL_DIR}/scripts/setup.sh)
 ---
 
 # Explainer
