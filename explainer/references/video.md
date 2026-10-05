@@ -12,7 +12,7 @@ X=$S/scripts/explainer.py
 
 First time on a machine: `bash $S/scripts/setup.sh` (installs system libraries where it can, creates the venv, checks tools). Every time: `$PY $X check`. Fix anything MISSING before writing scenes; a missing LaTeX tool otherwise shows up only after minutes of rendering. `check` also says whether the online TTS host is reachable and whether a CJK font exists.
 
-Work in a fresh project folder (e.g. `./explainer-<topic>/`). All commands below run from there.
+Work in a fresh project folder: `$PY $X init explainer-<topic> --title "…"` writes `script.json`, `storyboard.md`, `scenes.py` templates and a `manim.cfg` whose `tex_dir` points at `~/.cache/explainer/Tex`, so LaTeX renders are shared across projects (a second render of the same formulas is 2–3× faster). All commands below run from that folder.
 
 ## 1. Narration (`script.json`)
 
@@ -115,13 +115,13 @@ Mechanics that avoid common defects:
 ## 4. Render
 
 ```
-$MANIM -ql scenes.py Intro                      # one scene, fast, while iterating
-IDS=$($PY -c "import json;print(' '.join(s['id'] for s in json.load(open('script.json'))['scenes']))")
-$MANIM -ql --progress_bar none scenes.py $IDS   # draft: all scenes at 480p15 (~1–3 min); no progress bars, so [timed] lines stay visible
-$MANIM -qh --fps 30 scenes.py $IDS             # final: 1080p30 (~3–10 min; run in background)
+$PY $X render script.json -q l                  # draft: every scene at 480p15, one manim process per scene in parallel
+$PY $X render script.json -q l --scenes Intro   # one scene while iterating
+$PY $X render script.json -q l --stale          # only scenes whose source or cues changed
+$PY $X render script.json -q h                  # final: 1080p30 (run in background)
 ```
 
-`-a` renders every Scene subclass defined in `scenes.py` (helper scenes you defined there too, not the imported `Timed`); listing the ids is more predictable. Any multi-scene run stops at the first crash: after fixing it, re-run the ids that did not render.
+`render` runs `manim` once per scene with `-P` workers (default: cores − 1, max 4), prints one line per scene with its `[timed]` warnings, and keeps going when one scene crashes (it lists the failures at the end). Scenes are independent, so the draft takes roughly 1/P of the serial time. Plain `manim -ql scenes.py Intro Ratio` still works; `-a` renders every Scene subclass defined in `scenes.py` (not the imported `Timed`) and stops at the first crash.
 
 The folder manim writes into (`1080p30`, `480p15`) must match `--quality` on `assemble` and `review`; they stop and list what exists when it does not, instead of mixing resolutions. `-qh` without `--fps 30` writes `1080p60`.
 

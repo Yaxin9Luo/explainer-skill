@@ -1,31 +1,50 @@
 #!/usr/bin/env bash
 # Trigger accuracy for the explainer skill, measured with `claude -p`.
-# Usage: bash evals/run_triggers.sh [runs_per_prompt=1] [model]
+# Usage: bash evals/run_triggers.sh [runs_per_prompt=1] [parallel=6] [model]
 # Needs: the skill installed (~/.claude/skills/explainer), the `claude` CLI logged in, `python3`.
 # Each prompt is sent in a fresh non-interactive session with --max-turns 1; a run counts as
-# "triggered" when the first turn invokes the Skill tool with skill=explainer.
+# "triggered" when the first turn invokes the Skill tool with skill=explainer (or reads its SKILL.md).
 set -uo pipefail
 RUNS="${1:-1}"
-MODEL="${2:-}"
+PAR="${2:-6}"
+MODEL="${3:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-OUT="$HERE/results.jsonl"; : > "$OUT"
-hit_t=0; n_t=0; hit_f=0; n_f=0
-while IFS= read -r line; do
+OUT="$HERE/results.jsonl"
+WORK="$(mktemp -d)"
+export RUNS MODEL WORK
+
+one() {   # $1 = line number, $2 = json line
+  local n="$1" line="$2" prompt fired=0 r json
   prompt=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["prompt"])' "$line")
-  want=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["should_trigger"])' "$line")
-  fired=0
   for ((r=0; r<RUNS; r++)); do
-    json=$(cd /tmp && timeout 180 claude -p "$prompt" --output-format stream-json --verbose --max-turns 1 ${MODEL:+--model "$MODEL"} < /dev/null 2>/dev/null || true)
+    json=$(cd "$WORK" && timeout 240 claude -p "$prompt" --output-format stream-json --verbose --max-turns 1 \
+           ${MODEL:+--model "$MODEL"} < /dev/null 2>/dev/null || true)
     if printf '%s' "$json" | grep -q '"name": *"Skill"' && printf '%s' "$json" | grep -qi '"skill": *"explainer"'; then
       fired=$((fired+1))
     elif printf '%s' "$json" | grep -qi 'skills/explainer/SKILL.md'; then
       fired=$((fired+1))
     fi
   done
-  trig=$([ "$fired" -gt $((RUNS/2)) ] && echo true || echo false)
-  printf '{"prompt": %s, "should_trigger": %s, "triggered": %s, "fired": %d, "runs": %d}\n' \
-    "$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1], ensure_ascii=False))' "$prompt")" "$want" "$trig" "$fired" "$RUNS" >> "$OUT"
-  if [ "$want" = "True" ]; then n_t=$((n_t+1)); [ "$trig" = true ] && hit_t=$((hit_t+1)); else n_f=$((n_f+1)); [ "$trig" = false ] && hit_f=$((hit_f+1)); fi
-  echo "$trig  (want $want)  $prompt"
-done < "$HERE/triggers.jsonl"
-echo "should-trigger: $hit_t/$n_t fired   should-not: $hit_f/$n_f stayed quiet   details: $OUT"
+  python3 - "$line" "$fired" "$RUNS" > "$WORK/$n.json" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1]); fired, runs = int(sys.argv[2]), int(sys.argv[3])
+d.update(triggered=fired * 2 > runs, fired=fired, runs=runs)
+print(json.dumps(d, ensure_ascii=False))
+PY
+}
+export -f one
+
+nl -ba -w1 -s $'\t' "$HERE/triggers.jsonl" | xargs -P "$PAR" -d '\n' -I{} bash -c 'IFS=$'"'"'\t'"'"' read -r n line <<< "$1"; one "$n" "$line"' _ {}
+
+ls "$WORK"/*.json | sort -V | xargs cat > "$OUT"
+python3 - "$OUT" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+for d in rows:
+    mark = "ok  " if d["triggered"] == d["should_trigger"] else "MISS"
+    print(f'{mark} {"fired" if d["triggered"] else "quiet"} (want {"fire" if d["should_trigger"] else "quiet"})  {d["prompt"]}')
+t = [d for d in rows if d["should_trigger"]]; f = [d for d in rows if not d["should_trigger"]]
+print(f'should-trigger: {sum(d["triggered"] for d in t)}/{len(t)} fired   '
+      f'should-not: {sum(not d["triggered"] for d in f)}/{len(f)} stayed quiet   details: {sys.argv[1]}')
+PY
+rm -rf "$WORK"
